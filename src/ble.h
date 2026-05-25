@@ -45,12 +45,4 @@ int ble_advertise_assignments(void);
 void ble_get_self_assignment(int device_index,
 			     uint8_t *sound, uint16_t *delay_ms);
 
-/**
- * Cancel any pending RX playback work.
- *
- * Call this before triggering local playback to prevent a stale
- * scheduled RX playback from firing after the local playback.
- */
-void ble_cancel_rx_playback(void);
-
 #endif /* BLE_H_ */
