@@ -16,11 +16,14 @@
 int audio_sd_mount(void);
 
 /**
- * Play an MP3 file from the SD card through the VS1053B.
+ * Start playing an MP3 file from the SD card through the VS1053B.
  *
- * Plays the entire file to completion.  Callers should check
- * audio_is_playing() first and drop the event if a sound is
- * already in progress — this function does not preempt.
+ * Returns immediately.  Playback runs on a dedicated background
+ * thread.  audio_is_playing() returns true from the moment this
+ * function is called until the file has been fully streamed.
+ *
+ * Calling this while a sound is already playing is a no-op (the
+ * call is logged and ignored).
  *
  * @param sound_index  File to play (maps to "/<index>.mp3").
  */
