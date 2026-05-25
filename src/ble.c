@@ -72,6 +72,10 @@ static uint8_t rx_sound_index;
 
 static void rx_playback_handler(struct k_work *work)
 {
+	if (audio_is_playing()) {
+		LOG_INF("RX playback dropped — sound already playing");
+		return;
+	}
 	audio_play_sound(rx_sound_index);
 }
 
@@ -142,11 +146,6 @@ void ble_get_self_assignment(int device_index,
 	*delay_ms = sys_get_le16(&mfg_data[off + 2]);
 }
 
-void ble_cancel_rx_playback(void)
-{
-	k_work_cancel_delayable(&rx_playback_work);
-}
-
 /* ------------------------------------------------------------------ */
 /* Scanning (receive)                                                 */
 /* ------------------------------------------------------------------ */
@@ -160,6 +159,11 @@ static void scan_recv_cb(const struct bt_le_scan_recv_info *info,
 	 * processing our own reflected advertisement would double-play.
 	 */
 	if (*am_triggering_ptr) {
+		return;
+	}
+
+	/* Drop RX events while a sound is already playing. */
+	if (audio_is_playing()) {
 		return;
 	}
 

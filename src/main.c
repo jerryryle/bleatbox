@@ -92,6 +92,11 @@ static int64_t last_trigger_time;
 static void vibration_isr(const struct device *dev, struct gpio_callback *cb,
 			   uint32_t pins)
 {
+	/* Drop vibrations while a sound is already playing. */
+	if (audio_is_playing()) {
+		return;
+	}
+
 	int64_t now = k_uptime_get();
 	if ((now - last_trigger_time) < DEBOUNCE_MS) {
 		return;
@@ -178,16 +183,6 @@ static void vibration_handler(void *p1, void *p2, void *p3)
 			k_msleep(my_delay);
 		}
 
-		/*
-		 * Preempt any RX playback that was already in flight when
-		 * am_triggering was set.  ble_cancel_rx_playback catches
-		 * work that hasn't started yet; audio_cancel_playback
-		 * causes an in-progress play_sound loop to exit early.
-		 * Our own play call acquires the mutex, so it blocks until
-		 * the RX playback has fully released it.
-		 */
-		ble_cancel_rx_playback();
-		audio_cancel_playback();
 		audio_play_sound(my_sound);
 
 		am_triggering = false;

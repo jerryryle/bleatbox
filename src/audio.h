@@ -5,6 +5,7 @@
 #ifndef AUDIO_H_
 #define AUDIO_H_
 
+#include <stdbool.h>
 #include <stdint.h>
 
 /**
@@ -17,21 +18,21 @@ int audio_sd_mount(void);
 /**
  * Play an MP3 file from the SD card through the VS1053B.
  *
- * Acquires the playback mutex for the duration of playback.
- * Checks the cancel flag between 32-byte chunks — call
- * audio_cancel_playback() from another thread to preempt.
+ * Plays the entire file to completion.  Callers should check
+ * audio_is_playing() first and drop the event if a sound is
+ * already in progress — this function does not preempt.
  *
  * @param sound_index  File to play (maps to "/<index>.mp3").
  */
 void audio_play_sound(uint8_t sound_index);
 
 /**
- * Request cancellation of any in-progress playback.
+ * Check whether a sound is currently playing.
  *
- * The play_sound loop checks this flag between chunks and exits
- * early, releasing the playback mutex.  Safe to call from ISR
- * context or any thread.
+ * Safe to call from any context including ISRs.
+ *
+ * @return true if playback is in progress, false otherwise.
  */
-void audio_cancel_playback(void);
+bool audio_is_playing(void);
 
 #endif /* AUDIO_H_ */

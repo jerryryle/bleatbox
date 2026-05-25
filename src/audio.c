@@ -57,36 +57,22 @@ int audio_sd_mount(void)
 /* ------------------------------------------------------------------ */
 
 /*
- * Playback mutex: prevents the vibration handler thread and the RX
- * work queue from streaming interleaved audio chunks to the VS1053B.
- * The SPI driver serializes individual 32-byte transactions, but the
- * VS1053B interprets the byte stream as a continuous audio file — if
- * two threads alternate chunks from different MP3 files, the codec
- * sees a corrupt bitstream and produces noise or silence.
+ * True while audio_play_sound is streaming data to the VS1053B.
+ * Read by the vibration ISR and BLE scan callback to drop events
+ * during playback.  Volatile because it is written by one thread
+ * and read from ISR / other thread contexts.
  */
-static K_MUTEX_DEFINE(playback_mutex);
+static volatile bool playing;
 
-/*
- * Set by audio_cancel_playback() to preempt an in-progress playback.
- * The play_sound loop checks this between chunks and exits early,
- * allowing the caller to acquire the mutex without waiting for the
- * entire track to finish.
- */
-static volatile bool playback_cancel;
-
-void audio_cancel_playback(void)
+bool audio_is_playing(void)
 {
-	playback_cancel = true;
+	return playing;
 }
 
 void audio_play_sound(uint8_t sound_index)
 {
-	k_mutex_lock(&playback_mutex, K_FOREVER);
-	playback_cancel = false;
-
 	if (!sd_mounted) {
 		LOG_ERR("SD not mounted, cannot play sound %u", sound_index);
-		k_mutex_unlock(&playback_mutex);
 		return;
 	}
 
@@ -98,19 +84,15 @@ void audio_play_sound(uint8_t sound_index)
 	int ret = fs_open(&f, path, FS_O_READ);
 	if (ret < 0) {
 		LOG_ERR("Cannot open %s: %d", path, ret);
-		k_mutex_unlock(&playback_mutex);
 		return;
 	}
 
 	LOG_INF("Playing %s", path);
+	playing = true;
 
 	uint8_t buf[VS1053B_DATA_CHUNK];
 	ssize_t nread;
 	while ((nread = fs_read(&f, buf, sizeof(buf))) > 0) {
-		if (playback_cancel) {
-			LOG_INF("Playback preempted");
-			break;
-		}
 		ret = vs1053b_write_data(buf, nread);
 		if (ret) {
 			LOG_ERR("Playback aborted: SPI error");
@@ -118,7 +100,7 @@ void audio_play_sound(uint8_t sound_index)
 		}
 	}
 
+	playing = false;
 	fs_close(&f);
-	k_mutex_unlock(&playback_mutex);
 	LOG_INF("Playback finished");
 }
