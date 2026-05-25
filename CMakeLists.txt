@@ -4,7 +4,9 @@ project(tissue_box)
 
 target_sources(app PRIVATE
     src/main.c
+    src/vibration.c
     src/vs1053b.c
     src/audio.c
     src/ble.c
+    src/assignments.c
 )

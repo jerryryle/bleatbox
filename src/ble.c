@@ -1,25 +1,24 @@
 /*
  * BLE subsystem — extended advertising and scanning.
  *
- * Transmit: builds a manufacturer-data payload with random sound/delay
- * assignments for every device, then broadcasts it as a BLE extended
- * advertisement (5 events over ~150 ms).
+ * Transmit: serializes caller-provided assignments into a manufacturer-
+ * data payload and broadcasts via BLE extended advertising (5 events
+ * over ~150 ms).
  *
  * Receive: passively scans for matching broadcasts, parses this
- * device's assignment, and schedules playback on a dedicated work
- * queue so the BLE thread is never blocked.
+ * device's assignment, and posts an EVENT_BLE_RX to the main event
+ * queue.
  */
 
 #include <zephyr/kernel.h>
 #include <zephyr/bluetooth/bluetooth.h>
 #include <zephyr/bluetooth/gap.h>
 #include <zephyr/bluetooth/hci.h>
-#include <zephyr/random/random.h>
 #include <zephyr/sys/byteorder.h>
 #include <zephyr/logging/log.h>
 
 #include "ble.h"
-#include "audio.h"
+#include "events.h"
 
 LOG_MODULE_REGISTER(ble, LOG_LEVEL_INF);
 
@@ -37,75 +36,43 @@ LOG_MODULE_REGISTER(ble, LOG_LEVEL_INF);
 #define HEADER_SIZE            3   /* company_id(2) + magic(1) */
 
 /* ------------------------------------------------------------------ */
-/* Compile-time configuration                                         */
-/* ------------------------------------------------------------------ */
-
-#define NUM_SOUNDS    10
-#define DELAY_MIN_MS  0
-#define DELAY_MAX_MS  2000
-
-#define MAX_DEVICES   10
-
-/* ------------------------------------------------------------------ */
 /* Module state                                                       */
 /* ------------------------------------------------------------------ */
 
 static uint8_t              local_device_id;
-static const uint8_t       *known_ids;
-static uint8_t              num_known;
-static const volatile bool *am_triggering_ptr;
-
 static struct bt_le_ext_adv *adv_set;
+static struct k_msgq        *evt_q;
 
-#define MFG_DATA_MAX_SIZE (HEADER_SIZE + MAX_DEVICES * ASSIGNMENT_ENTRY_SIZE)
+#define MFG_DATA_MAX_SIZE (HEADER_SIZE + BLE_MAX_ASSIGNMENTS * ASSIGNMENT_ENTRY_SIZE)
 static uint8_t mfg_data[MFG_DATA_MAX_SIZE];
-static uint8_t mfg_data_size;
-
-/* ------------------------------------------------------------------ */
-/* RX playback work queue — offloads sound playback from BLE thread   */
-/* ------------------------------------------------------------------ */
-
-static K_THREAD_STACK_DEFINE(rx_wq_stack, 4096);
-static struct k_work_q rx_work_q;
-static struct k_work_delayable rx_playback_work;
-static uint8_t rx_sound_index;
-
-static void rx_playback_handler(struct k_work *work)
-{
-	if (audio_is_playing()) {
-		LOG_INF("RX playback dropped — sound already playing");
-		return;
-	}
-	audio_play_sound(rx_sound_index);
-}
 
 /* ------------------------------------------------------------------ */
 /* Advertising (transmit)                                             */
 /* ------------------------------------------------------------------ */
 
-static void build_mfg_data(void)
+int ble_advertise_assignments(const struct ble_assignment *assignments,
+			      uint8_t count)
 {
+	if (count > BLE_MAX_ASSIGNMENTS) {
+		LOG_ERR("Too many assignments (%u > %u)", count,
+			BLE_MAX_ASSIGNMENTS);
+		return -EINVAL;
+	}
+
+	/* Build manufacturer data */
 	mfg_data[0] = COMPANY_ID_LO;
 	mfg_data[1] = COMPANY_ID_HI;
 	mfg_data[2] = MAGIC_BYTE;
 
-	for (int i = 0; i < num_known; i++) {
+	for (int i = 0; i < count; i++) {
 		int offset = HEADER_SIZE + i * ASSIGNMENT_ENTRY_SIZE;
 
-		uint8_t  sound = (uint8_t)(sys_rand32_get() % NUM_SOUNDS);
-		uint16_t delay = DELAY_MIN_MS +
-			(uint16_t)(sys_rand32_get() %
-				   (DELAY_MAX_MS - DELAY_MIN_MS + 1));
-
-		mfg_data[offset + 0] = known_ids[i];
-		mfg_data[offset + 1] = sound;
-		sys_put_le16(delay, &mfg_data[offset + 2]);
+		mfg_data[offset + 0] = assignments[i].device_id;
+		mfg_data[offset + 1] = assignments[i].sound;
+		sys_put_le16(assignments[i].delay_ms, &mfg_data[offset + 2]);
 	}
-}
 
-int ble_advertise_assignments(void)
-{
-	build_mfg_data();
+	uint8_t mfg_data_size = HEADER_SIZE + count * ASSIGNMENT_ENTRY_SIZE;
 
 	struct bt_data ad[] = {
 		BT_DATA(BT_DATA_MANUFACTURER_DATA, mfg_data, mfg_data_size),
@@ -134,16 +101,8 @@ int ble_advertise_assignments(void)
 		return ret;
 	}
 
-	LOG_INF("BLE assignment broadcast started");
+	LOG_INF("BLE assignment broadcast started (%u entries)", count);
 	return 0;
-}
-
-void ble_get_self_assignment(int device_index,
-			     uint8_t *sound, uint16_t *delay_ms)
-{
-	int off = HEADER_SIZE + device_index * ASSIGNMENT_ENTRY_SIZE;
-	*sound    = mfg_data[off + 1];
-	*delay_ms = sys_get_le16(&mfg_data[off + 2]);
 }
 
 /* ------------------------------------------------------------------ */
@@ -153,20 +112,6 @@ void ble_get_self_assignment(int device_index,
 static void scan_recv_cb(const struct bt_le_scan_recv_info *info,
 			 struct net_buf_simple *buf)
 {
-	/*
-	 * Ignore broadcasts while we are the trigger source.  Our own
-	 * assignment is handled directly in the vibration thread, so
-	 * processing our own reflected advertisement would double-play.
-	 */
-	if (*am_triggering_ptr) {
-		return;
-	}
-
-	/* Drop RX events while a sound is already playing. */
-	if (audio_is_playing()) {
-		return;
-	}
-
 	if (buf->len < HEADER_SIZE + 2) {
 		return;
 	}
@@ -183,8 +128,10 @@ static void scan_recv_cb(const struct bt_le_scan_recv_info *info,
 		uint8_t ad_type = net_buf_simple_pull_u8(buf);
 		uint8_t data_len = ad_len - 1;
 
+		/* Must be manufacturer data with valid structure */
 		if (ad_type != BT_DATA_MANUFACTURER_DATA ||
-		    data_len != mfg_data_size) {
+		    data_len < HEADER_SIZE ||
+		    (data_len - HEADER_SIZE) % ASSIGNMENT_ENTRY_SIZE != 0) {
 			if (data_len <= buf->len) {
 				net_buf_simple_pull(buf, data_len);
 			}
@@ -201,7 +148,8 @@ static void scan_recv_cb(const struct bt_le_scan_recv_info *info,
 		}
 
 		/* Find our entry in the assignment list */
-		for (int i = 0; i < num_known; i++) {
+		int num_entries = (data_len - HEADER_SIZE) / ASSIGNMENT_ENTRY_SIZE;
+		for (int i = 0; i < num_entries; i++) {
 			int off = HEADER_SIZE + i * ASSIGNMENT_ENTRY_SIZE;
 			if (data[off] != local_device_id) {
 				continue;
@@ -210,26 +158,24 @@ static void scan_recv_cb(const struct bt_le_scan_recv_info *info,
 			uint8_t  sound = data[off + 1];
 			uint16_t delay = sys_get_le16(&data[off + 2]);
 
-			LOG_INF("RX assignment: sound=%u delay=%u ms",
-				sound, delay);
+			struct event evt = {
+				.type     = EVENT_BLE_RX,
+				.sound    = sound,
+				.delay_ms = delay,
+			};
 
 			/*
-			 * Cancel any pending playback from a prior broadcast
-			 * before overwriting rx_sound_index.  Without this,
-			 * a rapid second broadcast could overwrite the index
-			 * after the first work item was already scheduled but
-			 * before it executed, causing the wrong sound to play.
+			 * K_NO_WAIT: if the queue is full (main loop
+			 * is busy handling a prior event), this event
+			 * is silently dropped — which is the desired
+			 * behavior.
 			 */
-			k_work_cancel_delayable(&rx_playback_work);
-
-			rx_sound_index = sound;
-			k_work_schedule_for_queue(
-				&rx_work_q, &rx_playback_work,
-				K_MSEC(delay));
+			k_msgq_put(evt_q, &evt, K_NO_WAIT);
 			goto done;
 		}
 
-		LOG_WRN("Device ID 0x%02x not in broadcast", local_device_id);
+		/* Expected when we receive our own broadcast — self is excluded. */
+		LOG_DBG("Device ID 0x%02x not in broadcast", local_device_id);
 		goto done;
 	}
 
@@ -277,22 +223,10 @@ static const struct bt_le_scan_param scan_params = {
 /* Initialization                                                     */
 /* ------------------------------------------------------------------ */
 
-int ble_init(uint8_t device_id,
-	     const uint8_t *device_ids, uint8_t num_devices,
-	     const volatile bool *triggering_flag)
+int ble_init(uint8_t device_id, struct k_msgq *event_q)
 {
-	local_device_id   = device_id;
-	known_ids         = device_ids;
-	num_known         = num_devices;
-	am_triggering_ptr = triggering_flag;
-	mfg_data_size     = HEADER_SIZE + num_devices * ASSIGNMENT_ENTRY_SIZE;
-
-	/* RX playback work queue with dedicated stack */
-	k_work_queue_init(&rx_work_q);
-	k_work_queue_start(&rx_work_q, rx_wq_stack,
-			   K_THREAD_STACK_SIZEOF(rx_wq_stack),
-			   5, NULL);
-	k_work_init_delayable(&rx_playback_work, rx_playback_handler);
+	local_device_id = device_id;
+	evt_q           = event_q;
 
 	int ret = bt_enable(NULL);
 	if (ret) {
