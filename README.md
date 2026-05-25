@@ -27,44 +27,45 @@ Maker FeatherWing's card slot.
 ### 1. Install Homebrew dependencies
 
 ```bash
-brew install cmake ninja gperf python3 ccache qemu dtc wget
-pip3 install west
+brew install cmake ninja gperf python3 python-tk ccache qemu dtc libmagic wget openocd uv
 ```
 
-### 2. Install Zephyr SDK
+### 2. Create a Python virtual environment
+
+West and all Zephyr Python dependencies live in a venv to avoid polluting
+your system Python. From inside the project folder:
 
 ```bash
-cd ~
-wget https://github.com/zephyrproject-rtos/sdk-ng/releases/download/v0.17.0/zephyr-sdk-0.17.0_macos-x86_64.tar.xz
-# or for Apple Silicon:
-# wget https://github.com/zephyrproject-rtos/sdk-ng/releases/download/v0.17.0/zephyr-sdk-0.17.0_macos-aarch64.tar.xz
-tar xf zephyr-sdk-0.17.0_macos-*.tar.xz
-cd zephyr-sdk-0.17.0
-./setup.sh
+uv venv
+source .venv/bin/activate
+uv pip install west
+uv pip install pip
 ```
+
+> **Note:** You must `source ~/zephyrproject/.venv/bin/activate` in every new
+> terminal session before running `west`. Add it to your `~/.zshrc` if you
+> prefer it automatic.
 
 ### 3. Initialize Zephyr workspace
 
 ```bash
-west init ~/zephyrproject
-cd ~/zephyrproject
+west init
 west update
 west zephyr-export
-pip3 install -r ~/zephyrproject/zephyr/scripts/requirements.txt
+west packages pip --install
 ```
 
-### 4. Set environment
+### 4. Install Zephyr SDK
+
+The SDK (cross-compiler toolchains, host tools) is installed via `west`:
 
 ```bash
-# Add to your shell profile (~/.zshrc):
-export ZEPHYR_BASE=~/zephyrproject/zephyr
-export ZEPHYR_SDK_INSTALL_DIR=~/zephyr-sdk-0.17.0
+west sdk install
 ```
 
 ### 5. Build
 
 ```bash
-cd /path/to/tissue-box
 west build -b adafruit_feather_nrf52840 .
 ```
 
@@ -106,15 +107,29 @@ This requires `nrfjprog` (Nordic's CLI tools) or `openocd`.
 
 ### 7. Serial console
 
-The nRF52840 provides a USB CDC ACM serial console for log output:
+By default, log output goes to the **hardware UART** on the Feather header pins
+TX (P0.25) and RX (P0.24). Connect a 3.3V USB-to-UART adapter (e.g. FTDI
+FT232R or CP2102) to these pins and GND:
 
 ```bash
 # Find the device:
-ls /dev/cu.usbmodem*
+ls /dev/cu.usbmodem* /dev/cu.usbserial*
 
-# Connect (baud rate is irrelevant for USB CDC):
-screen /dev/cu.usbmodem14101 115200
+# Connect at 115200 baud:
+screen /dev/cu.usbserial-0001 115200
 ```
+
+**Optional: USB CDC ACM (log output over the Feather's USB connector)**
+
+Add to `prj.conf`:
+```
+CONFIG_USB_DEVICE_STACK=y
+CONFIG_UART_LINE_CTRL=y
+```
+
+This enables USB serial — logs appear on `/dev/cu.usbmodem*` when the Feather
+is connected via USB. No external adapter needed, but the USB peripheral draws
+~1 mA, which matters for battery-powered operation.
 
 ## VS Code Setup
 
@@ -131,10 +146,12 @@ marketplace. This single pack installs:
 ### Configure nRF Connect extension
 
 1. Open VS Code settings (`Cmd+,`) and search for `nrf-connect`.
-2. Set **Nrf Connect: Toolchain Path** to your Zephyr SDK:
+2. Set **Nrf Connect: Toolchain Path** to the SDK installed by `west sdk install`.
+   The default location is:
    ```
-   ~/zephyr-sdk-0.17.0
+   ~/.local/zephyr-sdk-1.0.1
    ```
+   (Run `west sdk list` to confirm the path on your machine.)
 3. Set **Nrf Connect: Zephyr Base** (if not auto-detected):
    ```
    ~/zephyrproject/zephyr
