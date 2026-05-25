@@ -1,0 +1,60 @@
+/*
+ * Devicetree overlay for Adafruit Feather nRF52840 Express
+ * with Adafruit Music Maker FeatherWing (VS1053B + SD card).
+ *
+ * Feather pin mapping (nRF52840 GPIO):
+ *   D5  = P1.08  ->  SD card CS (directly on FeatherWing)
+ *   D6  = P0.07  ->  VS1053B XCS  (SCI command chip select)
+ *   D9  = P0.26  ->  VS1053B DREQ (data request, active high)
+ *   D10 = P0.27  ->  VS1053B XDCS (SDI data chip select)
+ *   A0  = P0.04  ->  SW-18010P vibration switch (external pull-up via internal)
+ *
+ *   SPI bus (feather header):
+ *     SCK  = P0.14
+ *     MOSI = P0.13
+ *     MISO = P0.15
+ */
+
+/ {
+	aliases {
+		sdhc0 = &sdhc0;
+	};
+
+	vibration_switch: vibration_switch {
+		compatible = "gpio-keys";
+		vibration_sw: vibration_sw {
+			gpios = <&gpio0 4 (GPIO_PULL_UP | GPIO_ACTIVE_LOW)>;
+			label = "Vibration switch (SW-18010P)";
+		};
+	};
+
+	/*
+	 * Application-specific GPIOs for the VS1053B codec.
+	 * XCS and XDCS are SPI chip selects managed via spi_cs_control
+	 * (not gpio-leds) so the SPI driver handles bus locking atomically.
+	 * DREQ is a pure input — polled to gate SPI transfers.
+	 */
+	zephyr,user {
+		vs1053b-xcs-gpios = <&gpio0 7 GPIO_ACTIVE_LOW>;
+		vs1053b-xdcs-gpios = <&gpio0 27 GPIO_ACTIVE_LOW>;
+		vs1053b-dreq-gpios = <&gpio0 26 GPIO_ACTIVE_HIGH>;
+	};
+};
+
+&spi1 {
+	status = "okay";
+	cs-gpios = <&gpio1 8 GPIO_ACTIVE_LOW>;
+
+	sdhc0: sdhc@0 {
+		compatible = "zephyr,sdhc-spi-slot";
+		reg = <0>;
+		spi-max-frequency = <8000000>;
+		status = "okay";
+
+		mmc {
+			compatible = "zephyr,sdmmc-disk";
+			disk-name = "SD";
+			status = "okay";
+		};
+	};
+};
