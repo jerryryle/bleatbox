@@ -1,4 +1,4 @@
-# Tissue Box — Networked Sound Trigger Firmware
+# BleatBox — Networked Sound Trigger Firmware
 
 Zephyr RTOS firmware for a network of Adafruit Feather nRF52840 Express boards
 that trigger synchronized sound playback over BLE when any device detects
@@ -190,8 +190,7 @@ Flash the firmware with placeholder `KNOWN_DEVICE_IDS[]` values. On boot, the
 firmware logs:
 
 ```
-[00:00:00.000,000] <inf> tissue_box: FICR Device ID: 0xAB
-[00:00:00.000,000] <err> tissue_box: Device ID 0xAB NOT in KNOWN_DEVICE_IDS — halting
+[00:00:00.000,000] <inf> bleatbox: FICR Device ID: 0xAB
 ```
 
 Record the `0xAB` value for each board.

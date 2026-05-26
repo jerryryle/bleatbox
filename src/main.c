@@ -1,5 +1,5 @@
 /*
- * Tissue Box — Networked sound trigger firmware
+ * BleatBox — Networked sound trigger firmware
  *
  * Hardware: Adafruit Feather nRF52840 Express
  *           Adafruit Music Maker FeatherWing (VS1053B codec + SD card)
@@ -29,7 +29,7 @@
 #include "audio.h"
 #include "ble.h"
 
-LOG_MODULE_REGISTER(tissue_box, LOG_LEVEL_INF);
+LOG_MODULE_REGISTER(bleatbox, LOG_LEVEL_INF);
 
 /* ------------------------------------------------------------------ */
 /* Compile-time configuration                                         */
@@ -111,7 +111,7 @@ static void handle_ble_rx(const struct event *evt)
 
 int main(void)
 {
-	LOG_INF("Tissue Box firmware starting");
+	LOG_INF("BleatBox firmware starting");
 
 	/* --- Device identity --- */
 	uint8_t my_device_id = ficr_device_id();
@@ -149,7 +149,7 @@ int main(void)
 		return ret;
 	}
 
-	LOG_INF("Tissue Box ready — waiting for events");
+	LOG_INF("BleatBox ready — waiting for events");
 
 	/* --- Event loop --- */
 	struct event evt;
