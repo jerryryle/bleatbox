@@ -19,10 +19,9 @@
 #include <zephyr/devicetree.h>
 #include <zephyr/drivers/spi.h>
 #include <zephyr/logging/log.h>
-#include <hal/nrf_ficr.h>
 
 #include "assignments.h"
-#include "devices.h"
+#include "device_config.h"
 #include "events.h"
 #include "vibration.h"
 #include "vs1053b.h"
@@ -43,15 +42,6 @@ LOG_MODULE_REGISTER(bleatbox, LOG_LEVEL_INF);
 /* ------------------------------------------------------------------ */
 
 static const struct device *spi_dev = DEVICE_DT_GET(DT_NODELABEL(spi1));
-
-/* ------------------------------------------------------------------ */
-/* Device identity                                                    */
-/* ------------------------------------------------------------------ */
-
-static uint8_t ficr_device_id(void)
-{
-	return (uint8_t)(NRF_FICR->DEVICEID[0] & 0xFF);
-}
 
 /* ------------------------------------------------------------------ */
 /* Event queue                                                        */
@@ -77,15 +67,17 @@ static void handle_vibration(void)
 		return;
 	}
 
+	uint8_t num_peers;
+	const uint8_t *peer_ids = device_config_get_peers(&num_peers);
+
 	LOG_INF("Vibration detected — playing sound %u, broadcasting assignments",
 		VIBRATION_SOUND_INDEX);
 
-	struct ble_assignment assignments[NUM_OTHER_DEVICES];
-	assignments_generate(OTHER_KNOWN_DEVICE_IDS, NUM_OTHER_DEVICES,
-			     assignments);
+	struct ble_assignment assignments[DEVICE_CONFIG_MAX_PEERS];
+	assignments_generate(peer_ids, num_peers, assignments);
 
 	audio_play_sound(VIBRATION_SOUND_INDEX);
-	ble_advertise_assignments(assignments, NUM_OTHER_DEVICES);
+	ble_advertise_assignments(assignments, num_peers);
 }
 
 static void handle_ble_rx(const struct event *evt)
@@ -113,10 +105,6 @@ int main(void)
 {
 	LOG_INF("BleatBox firmware starting");
 
-	/* --- Device identity --- */
-	uint8_t my_device_id = ficr_device_id();
-	LOG_INF("FICR Device ID: 0x%02x", my_device_id);
-
 	/* --- SPI --- */
 	if (!device_is_ready(spi_dev)) {
 		LOG_ERR("SPI device not ready");
@@ -134,8 +122,19 @@ int main(void)
 	/* --- SD card --- */
 	ret = audio_sd_mount();
 	if (ret) {
-		LOG_WRN("SD card mount failed — playback disabled");
+		LOG_ERR("SD card mount failed — cannot load config");
+		return ret;
 	}
+
+	/* --- Device configuration --- */
+	ret = device_config_load();
+	if (ret) {
+		LOG_ERR("Device config load failed — halting");
+		k_sleep(K_FOREVER);
+		return ret;
+	}
+	uint8_t my_device_id = device_config_get_id();
+	LOG_INF("Device ID: 0x%02x", my_device_id);
 
 	/* --- Vibration switch --- */
 	ret = vibration_init(&event_q);
