@@ -19,8 +19,9 @@ resistor is required.
 ### SD card
 
 Format a microSD card as **FAT32**. Place MP3 files in the root directory named
-`0.mp3`, `1.mp3`, ..., `9.mp3` (matching `NUM_SOUNDS`). Insert into the Music
-Maker FeatherWing's card slot.
+`0.mp3`, `1.mp3`, ..., `9.mp3` (matching `NUM_SOUNDS`). The SD card also holds
+the device configuration file (see [Device Configuration](#device-configuration)
+below). Insert into the Music Maker FeatherWing's card slot.
 
 ## macOS Development Setup
 
@@ -179,47 +180,47 @@ marketplace. This single pack installs:
 2. Select the USB CDC ACM port.
 3. Log output appears in the integrated terminal — no need to leave VS Code.
 
-## Identifying Device IDs (FICR)
+## Device Configuration
 
-Each nRF52840 has a factory-programmed unique device ID. This firmware uses
-the lower byte of `FICR->DEVICEID[0]` as the 1-byte device ID.
+Each device reads its identity and peer list from a config file on the SD card
+at boot. This means every device runs the same firmware — only the SD card
+contents differ.
 
-### Method 1: Read from firmware log
+### Config file format
 
-Flash the firmware with placeholder `KNOWN_DEVICE_IDS[]` values. On boot, the
-firmware logs:
+Create a plain text file named `bleatbox.cfg` in the root of the SD card:
 
 ```
-[00:00:00.000,000] <inf> bleatbox: FICR Device ID: 0xAB
+# This device's ID (one hex byte)
+id 0xa3
+
+# IDs of the other devices in the network
+peers 0x01 0x42 0xb7 0x05 0x9c
 ```
 
-Record the `0xAB` value for each board.
+- **`id`** — a single hex byte (`0x00`–`0xFF`) that uniquely identifies this
+  device on the network.
+- **`peers`** — space-separated hex bytes for every *other* device in the
+  network. Up to 30 peers are supported.
+- Lines starting with `#` are comments.
+- Hex values accept a `0x` prefix or bare hex digits.
 
-### Method 2: Read via nrfjprog
+Both `id` and `peers` are required. If the file is missing or malformed, the
+firmware logs an error and halts.
 
-If you have a J-Link probe:
+### Provisioning workflow
 
-```bash
-nrfjprog --memrd 0x10000060 --n 4
-# Output: 0x10000060: XXXXXXAB
-#                             ^^ lower byte = device ID
-```
+1. Choose a unique 1-byte ID for each device (e.g. `0x01` through `0x05` for a
+   five-device network).
+2. For each device, create a `bleatbox.cfg` with that device's `id` and the IDs
+   of all the *other* devices as `peers`.
+3. Copy the file to the device's SD card alongside the MP3 files.
+4. Boot the device. The log output confirms the loaded configuration:
+   ```
+   [00:00:00.xxx,xxx] <inf> device_config: Device ID: 0xa3
+   [00:00:00.xxx,xxx] <inf> device_config: Peers:
+                                           a3 01 42 b7 05 9c
+   ```
 
-### Method 3: Read via Python/adafruit-nrfutil
-
-```bash
-pip3 install adafruit-nrfutil
-# Then read via the DFU serial interface (board-specific)
-```
-
-### Populating the device array
-
-After collecting all device IDs, update `KNOWN_DEVICE_IDS[]` in `src/main.c`:
-
-```c
-static const uint8_t KNOWN_DEVICE_IDS[] = {
-    0xAB, 0x3F, 0x72, /* ... one entry per physical board */
-};
-```
-
-Rebuild and flash all devices with the same firmware.
+To change a device's configuration, update `bleatbox.cfg` on its SD card and
+reboot.
