@@ -7,6 +7,9 @@
  */
 
 #include <zephyr/kernel.h>
+#include <zephyr/device.h>
+#include <zephyr/devicetree.h>
+#include <zephyr/drivers/spi.h>
 #include <zephyr/fs/fs.h>
 #include <zephyr/logging/log.h>
 
@@ -17,6 +20,34 @@
 #include "vs1053b.h"
 
 LOG_MODULE_REGISTER(audio, LOG_LEVEL_INF);
+
+/* ------------------------------------------------------------------ */
+/* Hardware                                                           */
+/* ------------------------------------------------------------------ */
+
+static const struct device *spi_dev = DEVICE_DT_GET(DT_NODELABEL(spi1));
+
+int audio_init(void)
+{
+	if (!device_is_ready(spi_dev)) {
+		LOG_ERR("SPI device not ready");
+		return -ENODEV;
+	}
+
+	int ret = vs1053b_init(spi_dev);
+	if (ret) {
+		LOG_ERR("VS1053B init failed: %d", ret);
+		return ret;
+	}
+
+	LOG_INF("Audio initialized");
+	return 0;
+}
+
+int audio_set_volume(uint8_t percent)
+{
+	return vs1053b_set_volume(percent);
+}
 
 /* ------------------------------------------------------------------ */
 /* Playback thread                                                    */

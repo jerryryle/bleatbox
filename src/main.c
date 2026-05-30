@@ -15,16 +15,12 @@
  */
 
 #include <zephyr/kernel.h>
-#include <zephyr/device.h>
-#include <zephyr/devicetree.h>
-#include <zephyr/drivers/spi.h>
 #include <zephyr/logging/log.h>
 
 #include "assignments.h"
 #include "device_config.h"
 #include "events.h"
 #include "vibration.h"
-#include "vs1053b.h"
 #include "sdcard.h"
 #include "audio.h"
 #include "ble.h"
@@ -37,12 +33,6 @@ LOG_MODULE_REGISTER(bleatbox, LOG_LEVEL_INF);
 
 /* Sound played locally when this device detects vibration. */
 #define VIBRATION_SOUND_INDEX 0
-
-/* ------------------------------------------------------------------ */
-/* Hardware references from devicetree                                */
-/* ------------------------------------------------------------------ */
-
-static const struct device *spi_dev = DEVICE_DT_GET(DT_NODELABEL(spi1));
 
 /* ------------------------------------------------------------------ */
 /* Event queue                                                        */
@@ -106,19 +96,11 @@ int main(void)
 {
 	LOG_INF("BleatBox firmware starting");
 
-	/* --- SPI --- */
-	if (!device_is_ready(spi_dev)) {
-		LOG_ERR("SPI device not ready");
-		return -ENODEV;
-	}
-
-	/* --- VS1053B codec --- */
-	int ret = vs1053b_init(spi_dev);
+	/* --- Audio (SPI + VS1053B codec) --- */
+	int ret = audio_init();
 	if (ret) {
-		LOG_ERR("VS1053B init failed: %d", ret);
 		return ret;
 	}
-	LOG_INF("VS1053B initialized");
 
 	/* --- SD card --- */
 	ret = sdcard_mount();
@@ -139,7 +121,7 @@ int main(void)
 	LOG_INF("Device ID: 0x%02x", my_device_id);
 
 	/* --- Volume from config --- */
-	vs1053b_set_volume(device_config_get_volume());
+	audio_set_volume(device_config_get_volume());
 
 	/* --- Vibration switch --- */
 	ret = vibration_init(&event_q);
