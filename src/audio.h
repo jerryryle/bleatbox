@@ -9,6 +9,23 @@
 #include <stdint.h>
 
 /**
+ * Initialize the audio subsystem (SPI bus and VS1053B codec).
+ *
+ * Must be called before audio_play_sound() or audio_set_volume().
+ *
+ * @return 0 on success, negative errno on failure.
+ */
+int audio_init(void);
+
+/**
+ * Set playback volume.
+ *
+ * @param percent  0 (silent) to 100 (maximum).
+ * @return 0 on success, negative errno on failure.
+ */
+int audio_set_volume(uint8_t percent);
+
+/**
  * Start playing an MP3 file from the SD card through the VS1053B.
  *
  * Returns immediately.  Playback runs on a dedicated background

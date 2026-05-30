@@ -10,7 +10,6 @@
 
 #include "audio.h"
 #include "sdcard.h"
-#include "vs1053b.h"
 
 static int cmd_play(const struct shell *sh, size_t argc, char **argv)
 {
@@ -51,7 +50,7 @@ static int cmd_volume(const struct shell *sh, size_t argc, char **argv)
 		return -EINVAL;
 	}
 
-	int ret = vs1053b_set_volume((uint8_t)vol);
+	int ret = audio_set_volume((uint8_t)vol);
 	if (ret) {
 		shell_error(sh, "Failed to set volume: %d", ret);
 		return ret;
