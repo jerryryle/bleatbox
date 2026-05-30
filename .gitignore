@@ -17,8 +17,5 @@ __pycache__/
 # macOS
 .DS_Store
 
-# VS Code / nRF Connect build artifacts
-.vscode/
-
 # Claude
 .claude/settings.local.json
