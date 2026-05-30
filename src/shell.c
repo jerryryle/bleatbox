@@ -9,6 +9,7 @@
 #include <stdlib.h>
 
 #include "audio.h"
+#include "vs1053b.h"
 
 static int cmd_play(const struct shell *sh, size_t argc, char **argv)
 {
@@ -29,10 +30,37 @@ static int cmd_play(const struct shell *sh, size_t argc, char **argv)
 	return 0;
 }
 
+static int cmd_volume(const struct shell *sh, size_t argc, char **argv)
+{
+	if (argc < 2) {
+		shell_print(sh, "Usage: bleatbox volume <0-100>");
+		return 0;
+	}
+
+	unsigned long vol = strtoul(argv[1], NULL, 10);
+
+	if (vol > 100) {
+		shell_error(sh, "Volume must be 0-100");
+		return -EINVAL;
+	}
+
+	int ret = vs1053b_set_volume((uint8_t)vol);
+	if (ret) {
+		shell_error(sh, "Failed to set volume: %d", ret);
+		return ret;
+	}
+
+	shell_print(sh, "Volume set to %lu%%", vol);
+	return 0;
+}
+
 SHELL_STATIC_SUBCMD_SET_CREATE(sub_bleatbox,
 	SHELL_CMD_ARG(play, NULL,
 		      "Play a sound: bleatbox play <index>",
 		      cmd_play, 2, 0),
+	SHELL_CMD_ARG(volume, NULL,
+		      "Set volume: bleatbox volume <0-100>",
+		      cmd_volume, 1, 1),
 	SHELL_SUBCMD_SET_END
 );
 
