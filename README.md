@@ -18,10 +18,12 @@ resistor is required.
 
 ### SD card
 
-Format a microSD card as **FAT32**. Place MP3 files in the root directory named
-`0.mp3`, `1.mp3`, ..., `9.mp3` (matching `NUM_SOUNDS`). The SD card also holds
-the device configuration file (see [Device Configuration](#device-configuration)
-below). Insert into the Music Maker FeatherWing's card slot.
+Format a microSD card as **FAT32**. Place FLAC files in the root directory named
+with zero-padded two-digit indices: `00.flac`, `01.flac`, ..., up to `99.flac`.
+The firmware scans the card at boot and auto-discovers available sounds. The SD
+card also holds the device configuration file (see
+[Device Configuration](#device-configuration) below). Insert into the Music
+Maker FeatherWing's card slot.
 
 ## macOS Development Setup
 
@@ -74,6 +76,14 @@ To start fresh:
 
 ```bash
 make clean
+```
+
+### Tests
+
+Unit tests build and run on the host with CMake/CTest (no hardware needed):
+
+```bash
+make test
 ```
 
 ### 6. Flash
@@ -215,7 +225,7 @@ missing or malformed, the firmware logs an error and halts.
    five-device network).
 2. For each device, create a `bleatbox.cfg` with that device's `id` and the IDs
    of all the *other* devices as `peers`.
-3. Copy the file to the device's SD card alongside the MP3 files.
+3. Copy the file to the device's SD card alongside the FLAC files.
 4. Boot the device. The log output confirms the loaded configuration:
    ```
    [00:00:00.xxx,xxx] <inf> device_config: Device ID: 0xa3
@@ -234,5 +244,5 @@ device provisioning succeeds.
 
 | Command | Description |
 |---------|-------------|
-| `bleatbox play <index>` | Play sound file `<index>.mp3` from the SD card |
+| `bleatbox play <index>` | Play sound file `<index>.flac` from the SD card |
 | `bleatbox volume <0-100>` | Set playback volume (runtime only, does not persist) |

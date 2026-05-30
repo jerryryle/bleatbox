@@ -1,0 +1,28 @@
+cmake_minimum_required(VERSION 3.20.0)
+project(bleatbox_tests C CXX)
+
+set(CMAKE_CXX_STANDARD 14)
+set(SRC_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../src)
+
+include(FetchContent)
+FetchContent_Declare(
+    googletest
+    GIT_REPOSITORY https://github.com/google/googletest.git
+    GIT_TAG v1.15.2
+)
+FetchContent_MakeAvailable(googletest)
+
+enable_testing()
+
+file(GLOB TEST_SOURCES *_test.cpp)
+set(MODULE_SOURCES "")
+foreach(TEST_FILE ${TEST_SOURCES})
+    get_filename_component(NAME ${TEST_FILE} NAME_WE)
+    string(REPLACE "_test" "" MODULE ${NAME})
+    list(APPEND MODULE_SOURCES ${SRC_DIR}/${MODULE}.c)
+endforeach()
+
+add_executable(tests ${TEST_SOURCES} ${MODULE_SOURCES})
+target_include_directories(tests PRIVATE ${SRC_DIR})
+target_link_libraries(tests GTest::gtest_main)
+add_test(NAME tests COMMAND tests)

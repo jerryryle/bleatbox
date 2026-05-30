@@ -5,10 +5,15 @@ ACTIVATE := . $(VENV)/bin/activate
 
 BOARD ?= adafruit_feather_nrf52840
 
-.PHONY: build clean
+.PHONY: build clean test
 
 build:
 	$(ACTIVATE) && west build -b $(BOARD)
 
 clean:
-	rm -rf build
+	rm -rf build build-tests
+
+test:
+	cmake -S tests -B build-tests
+	cmake --build build-tests
+	ctest --test-dir build-tests --output-on-failure
