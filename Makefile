@@ -7,7 +7,7 @@ BOARD ?= adafruit_feather_nrf52840
 
 .PHONY: build clean test
 
-build:
+build: test
 	$(ACTIVATE) && west build -b $(BOARD)
 
 clean:
