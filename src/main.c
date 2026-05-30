@@ -15,6 +15,7 @@
  */
 
 #include <zephyr/kernel.h>
+#include <zephyr/drivers/gpio.h>
 #include <zephyr/logging/log.h>
 
 #include "assignments.h"
@@ -27,6 +28,13 @@
 #include "ble.h"
 
 LOG_MODULE_REGISTER(bleatbox, LOG_LEVEL_INF);
+
+/* ------------------------------------------------------------------ */
+/* Onboard LED (boot indicator)                                       */
+/* ------------------------------------------------------------------ */
+
+#define LED0_NODE DT_ALIAS(led0)
+static const struct gpio_dt_spec led = GPIO_DT_SPEC_GET(LED0_NODE, gpios);
 
 /* ------------------------------------------------------------------ */
 /* Compile-time configuration                                         */
@@ -96,6 +104,17 @@ static void handle_ble_rx(const struct event *evt)
 int main(void)
 {
 	LOG_INF("BleatBox firmware starting");
+
+	/* --- Boot indicator (blink LED 3 times) --- */
+	if (gpio_is_ready_dt(&led)) {
+		gpio_pin_configure_dt(&led, GPIO_OUTPUT_INACTIVE);
+		for (int i = 0; i < 3; i++) {
+			gpio_pin_set_dt(&led, 1);
+			k_msleep(200);
+			gpio_pin_set_dt(&led, 0);
+			k_msleep(200);
+		}
+	}
 
 	/* --- Audio (SPI + VS1053B codec) --- */
 	int ret = audio_init();
