@@ -83,7 +83,7 @@ static void audio_thread_entry(void *p1, void *p2, void *p3)
 		}
 
 		char path[32];
-		snprintf(path, sizeof(path), SDCARD_MOUNT_POINT "/%u.mp3",
+		snprintf(path, sizeof(path), SDCARD_MOUNT_POINT "/%02u.flac",
 			 sound_index);
 
 		struct fs_file_t f;
