@@ -30,6 +30,13 @@ int audio_sd_mount(void);
 void audio_play_sound(uint8_t sound_index);
 
 /**
+ * Check whether the SD card is mounted.
+ *
+ * @return true if the SD card was successfully mounted.
+ */
+bool audio_is_sd_mounted(void);
+
+/**
  * Check whether a sound is currently playing.
  *
  * Safe to call from any context including ISRs.

@@ -20,6 +20,11 @@ static int cmd_play(const struct shell *sh, size_t argc, char **argv)
 		return -EINVAL;
 	}
 
+	if (!audio_is_sd_mounted()) {
+		shell_error(sh, "SD card not mounted");
+		return -ENODEV;
+	}
+
 	if (audio_is_playing()) {
 		shell_warn(sh, "Already playing — ignored");
 		return 0;
@@ -37,9 +42,10 @@ static int cmd_volume(const struct shell *sh, size_t argc, char **argv)
 		return 0;
 	}
 
-	unsigned long vol = strtoul(argv[1], NULL, 10);
+	char *end;
+	unsigned long vol = strtoul(argv[1], &end, 10);
 
-	if (vol > 100) {
+	if (end == argv[1] || vol > 100) {
 		shell_error(sh, "Volume must be 0-100");
 		return -EINVAL;
 	}
