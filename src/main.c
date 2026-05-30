@@ -25,6 +25,7 @@
 #include "events.h"
 #include "vibration.h"
 #include "vs1053b.h"
+#include "sdcard.h"
 #include "audio.h"
 #include "ble.h"
 
@@ -120,7 +121,7 @@ int main(void)
 	LOG_INF("VS1053B initialized");
 
 	/* --- SD card --- */
-	ret = audio_sd_mount();
+	ret = sdcard_mount();
 	if (ret) {
 		LOG_ERR("SD card mount failed — shell still available over USB");
 		k_sleep(K_FOREVER);

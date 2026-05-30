@@ -9,6 +9,7 @@
 #include <stdlib.h>
 
 #include "audio.h"
+#include "sdcard.h"
 #include "vs1053b.h"
 
 static int cmd_play(const struct shell *sh, size_t argc, char **argv)
@@ -20,7 +21,7 @@ static int cmd_play(const struct shell *sh, size_t argc, char **argv)
 		return -EINVAL;
 	}
 
-	if (!audio_is_sd_mounted()) {
+	if (!sdcard_is_mounted()) {
 		shell_error(sh, "SD card not mounted");
 		return -ENODEV;
 	}

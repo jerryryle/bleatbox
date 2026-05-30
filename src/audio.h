@@ -1,5 +1,5 @@
 /*
- * Audio subsystem — SD card mounting and sound playback.
+ * Audio subsystem — sound playback via VS1053B codec.
  */
 
 #ifndef AUDIO_H_
@@ -7,13 +7,6 @@
 
 #include <stdbool.h>
 #include <stdint.h>
-
-/**
- * Mount the FAT32-formatted SD card.
- *
- * @return 0 on success, negative errno on failure.
- */
-int audio_sd_mount(void);
 
 /**
  * Start playing an MP3 file from the SD card through the VS1053B.
@@ -28,13 +21,6 @@ int audio_sd_mount(void);
  * @param sound_index  File to play (maps to "/<index>.mp3").
  */
 void audio_play_sound(uint8_t sound_index);
-
-/**
- * Check whether the SD card is mounted.
- *
- * @return true if the SD card was successfully mounted.
- */
-bool audio_is_sd_mounted(void);
 
 /**
  * Check whether a sound is currently playing.

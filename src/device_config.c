@@ -5,10 +5,11 @@
 #include <string.h>
 
 #include "device_config.h"
+#include "sdcard.h"
 
 LOG_MODULE_REGISTER(device_config, LOG_LEVEL_INF);
 
-#define CONFIG_PATH "/SD:/bleatbox.cfg"
+#define CONFIG_PATH SDCARD_MOUNT_POINT "/bleatbox.cfg"
 #define LINE_MAX    256
 
 #define DEFAULT_VOLUME 80

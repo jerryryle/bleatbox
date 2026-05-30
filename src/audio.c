@@ -1,5 +1,5 @@
 /*
- * Audio subsystem — SD card mounting and sound playback.
+ * Audio subsystem — sound playback via VS1053B codec.
  *
  * Playback runs on a dedicated background thread.  audio_play_sound()
  * signals the thread and returns immediately so the caller is never
@@ -8,53 +8,15 @@
 
 #include <zephyr/kernel.h>
 #include <zephyr/fs/fs.h>
-#include <ff.h>
-#include <zephyr/storage/disk_access.h>
 #include <zephyr/logging/log.h>
 
 #include <stdio.h>
 
 #include "audio.h"
+#include "sdcard.h"
 #include "vs1053b.h"
 
 LOG_MODULE_REGISTER(audio, LOG_LEVEL_INF);
-
-/* ------------------------------------------------------------------ */
-/* SD card and filesystem                                             */
-/* ------------------------------------------------------------------ */
-
-static FATFS fat_fs;
-static struct fs_mount_t mount_point = {
-	.type = FS_FATFS,
-	.fs_data = &fat_fs,
-	.mnt_point = "/SD:",
-};
-static bool sd_mounted;
-
-int audio_sd_mount(void)
-{
-	static const char *disk = "SD";
-	uint32_t block_count, block_size;
-
-	if (disk_access_init(disk) != 0) {
-		LOG_ERR("SD card init failed");
-		return -EIO;
-	}
-	disk_access_ioctl(disk, DISK_IOCTL_GET_SECTOR_COUNT, &block_count);
-	disk_access_ioctl(disk, DISK_IOCTL_GET_SECTOR_SIZE, &block_size);
-	LOG_INF("SD card: %u sectors, %u bytes/sector", block_count, block_size);
-
-	mount_point.storage_dev = (void *)disk;
-	int ret = fs_mount(&mount_point);
-	if (ret != 0) {
-		LOG_ERR("FAT mount failed: %d", ret);
-		return ret;
-	}
-
-	sd_mounted = true;
-	LOG_INF("SD card mounted at %s", mount_point.mnt_point);
-	return 0;
-}
 
 /* ------------------------------------------------------------------ */
 /* Playback thread                                                    */
@@ -82,7 +44,7 @@ static void audio_thread_entry(void *p1, void *p2, void *p3)
 
 		uint8_t sound_index = pending_sound;
 
-		if (!sd_mounted) {
+		if (!sdcard_is_mounted()) {
 			LOG_ERR("SD not mounted, cannot play sound %u",
 				sound_index);
 			playing = false;
@@ -90,7 +52,8 @@ static void audio_thread_entry(void *p1, void *p2, void *p3)
 		}
 
 		char path[32];
-		snprintf(path, sizeof(path), "/SD:/%u.mp3", sound_index);
+		snprintf(path, sizeof(path), SDCARD_MOUNT_POINT "/%u.mp3",
+			 sound_index);
 
 		struct fs_file_t f;
 		fs_file_t_init(&f);
@@ -129,11 +92,6 @@ K_THREAD_DEFINE(audio_tid, AUDIO_STACK_SIZE,
 /* ------------------------------------------------------------------ */
 /* Public API                                                         */
 /* ------------------------------------------------------------------ */
-
-bool audio_is_sd_mounted(void)
-{
-	return sd_mounted;
-}
 
 bool audio_is_playing(void)
 {
