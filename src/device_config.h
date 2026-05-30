@@ -23,4 +23,11 @@ uint8_t device_config_get_id(void);
  */
 const uint8_t *device_config_get_peers(uint8_t *count);
 
+/**
+ * Return the configured volume (0–100).
+ *
+ * Defaults to 80 if not set in the config file.
+ */
+uint8_t device_config_get_volume(void);
+
 #endif /* DEVICE_CONFIG_H_ */

@@ -18,6 +18,14 @@
 int vs1053b_init(const struct device *spi_dev);
 
 /**
+ * Set playback volume on both channels.
+ *
+ * @param percent  0 (silent) to 100 (maximum).
+ * @return 0 on success, negative errno on failure.
+ */
+int vs1053b_set_volume(uint8_t percent);
+
+/**
  * Write a chunk of audio data to the VS1053B SDI (data) interface.
  *
  * Waits for DREQ before transmitting.  Caller is responsible for

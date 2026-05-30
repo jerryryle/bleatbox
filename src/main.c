@@ -137,6 +137,9 @@ int main(void)
 	uint8_t my_device_id = device_config_get_id();
 	LOG_INF("Device ID: 0x%02x", my_device_id);
 
+	/* --- Volume from config --- */
+	vs1053b_set_volume(device_config_get_volume());
+
 	/* --- Vibration switch --- */
 	ret = vibration_init(&event_q);
 	if (ret) {

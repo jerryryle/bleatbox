@@ -173,6 +173,20 @@ static int vs_read_reg(uint8_t reg, uint16_t *val)
 /* Public API                                                         */
 /* ------------------------------------------------------------------ */
 
+int vs1053b_set_volume(uint8_t percent)
+{
+	if (percent > 100) {
+		percent = 100;
+	}
+
+	/* 0x00 = max, 0xFE = silence.  Map 100 → 0x00, 0 → 0xFE. */
+	uint8_t att = (uint8_t)((uint16_t)(100 - percent) * 254 / 100);
+	uint16_t vol = ((uint16_t)att << 8) | att;
+
+	LOG_INF("Volume %u%% (register 0x%04x)", percent, vol);
+	return vs_write_reg(VS_REG_VOL, vol);
+}
+
 int vs1053b_write_data(const uint8_t *data, size_t len)
 {
 	struct spi_buf tx_buf = { .buf = (void *)data, .len = len };
@@ -217,8 +231,7 @@ int vs1053b_init(const struct device *spi_dev)
 	if (ret) return ret;
 	k_msleep(2);
 
-	/* 0x1010: moderate volume, both channels. 0x00=max, 0xFE=silence. */
-	ret = vs_write_reg(VS_REG_VOL, 0x1010);
+	ret = vs1053b_set_volume(80);
 	if (ret) return ret;
 
 	uint16_t status;
