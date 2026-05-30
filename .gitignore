@@ -9,6 +9,7 @@ bootloader/
 
 # Build output
 build/
+build-tests/
 
 # Python virtual environment
 .venv/
