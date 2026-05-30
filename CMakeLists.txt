@@ -10,4 +10,5 @@ target_sources(app PRIVATE
     src/ble.c
     src/assignments.c
     src/device_config.c
+    src/shell.c
 )
