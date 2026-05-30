@@ -16,6 +16,11 @@
  */
 
 / {
+	chosen {
+		zephyr,console = &cdc_acm_uart0;
+		zephyr,shell-uart = &cdc_acm_uart0;
+	};
+
 	aliases {
 		sdhc0 = &sdhc0;
 	};
@@ -38,6 +43,12 @@
 		vs1053b-xcs-gpios = <&gpio0 7 GPIO_ACTIVE_LOW>;
 		vs1053b-xdcs-gpios = <&gpio0 27 GPIO_ACTIVE_LOW>;
 		vs1053b-dreq-gpios = <&gpio0 26 GPIO_ACTIVE_HIGH>;
+	};
+};
+
+&zephyr_udc0 {
+	cdc_acm_uart0: cdc_acm_uart0 {
+		compatible = "zephyr,cdc-acm-uart";
 	};
 };
 

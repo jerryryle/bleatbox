@@ -122,16 +122,17 @@ int main(void)
 	/* --- SD card --- */
 	ret = audio_sd_mount();
 	if (ret) {
-		LOG_ERR("SD card mount failed — cannot load config");
-		return ret;
+		LOG_ERR("SD card mount failed — shell still available over USB");
+		k_sleep(K_FOREVER);
+		return 0;
 	}
 
 	/* --- Device configuration --- */
 	ret = device_config_load();
 	if (ret) {
-		LOG_ERR("Device config load failed — halting");
+		LOG_ERR("Device config load failed — shell still available over USB");
 		k_sleep(K_FOREVER);
-		return ret;
+		return 0;
 	}
 	uint8_t my_device_id = device_config_get_id();
 	LOG_INF("Device ID: 0x%02x", my_device_id);
