@@ -67,7 +67,13 @@ west sdk install
 ### 5. Build
 
 ```bash
-west build -b adafruit_feather_nrf52840 .
+make build
+```
+
+To start fresh:
+
+```bash
+make clean
 ```
 
 ### 6. Flash
@@ -108,29 +114,19 @@ This requires `nrfjprog` (Nordic's CLI tools) or `openocd`.
 
 ### 7. Serial console
 
-By default, log output goes to the **hardware UART** on the Feather header pins
-TX (P0.25) and RX (P0.24). Connect a 3.3V USB-to-UART adapter (e.g. FTDI
-FT232R or CP2102) to these pins and GND:
+Log output and an interactive shell are available over USB CDC ACM. Connect the Feather via USB and open the serial port:
 
 ```bash
 # Find the device:
-ls /dev/cu.usbmodem* /dev/cu.usbserial*
+ls /dev/cu.usbmodem*
 
 # Connect at 115200 baud:
-screen /dev/cu.usbserial-0001 115200
+screen /dev/cu.usbmodem* 115200
 ```
 
-**Optional: USB CDC ACM (log output over the Feather's USB connector)**
+If no USB host is attached, log output is silently discarded until a terminal connects.
 
-Add to `prj.conf`:
-```
-CONFIG_USB_DEVICE_STACK=y
-CONFIG_UART_LINE_CTRL=y
-```
-
-This enables USB serial — logs appear on `/dev/cu.usbmodem*` when the Feather
-is connected via USB. No external adapter needed, but the USB peripheral draws
-~1 mA, which matters for battery-powered operation.
+See [Shell Commands](#shell-commands) below for the available interactive commands.
 
 ## VS Code Setup
 
@@ -178,7 +174,7 @@ marketplace. This single pack installs:
 1. Open the nRF Terminal panel (bottom bar or via the command palette:
    `nRF Terminal: Start Terminal`).
 2. Select the USB CDC ACM port.
-3. Log output appears in the integrated terminal — no need to leave VS Code.
+3. Log output and the interactive shell appear in the integrated terminal.
 
 ## Device Configuration
 
@@ -196,17 +192,22 @@ id 0xa3
 
 # IDs of the other devices in the network
 peers 0x01 0x42 0xb7 0x05 0x9c
+
+# Playback volume (0 = silent, 100 = max, default 80)
+volume 80
 ```
 
 - **`id`** — a single hex byte (`0x00`–`0xFF`) that uniquely identifies this
   device on the network.
 - **`peers`** — space-separated hex bytes for every *other* device in the
   network. Up to 30 peers are supported.
+- **`volume`** *(optional)* — playback volume, 0–100. Defaults to 80 if
+  omitted.
 - Lines starting with `#` are comments.
 - Hex values accept a `0x` prefix or bare hex digits.
 
-Both `id` and `peers` are required. If the file is missing or malformed, the
-firmware logs an error and halts.
+Both `id` and `peers` are required. `volume` is optional. If the file is
+missing or malformed, the firmware logs an error and halts.
 
 ### Provisioning workflow
 
@@ -224,3 +225,14 @@ firmware logs an error and halts.
 
 To change a device's configuration, update `bleatbox.cfg` on its SD card and
 reboot.
+
+## Shell Commands
+
+An interactive shell is available over USB serial (see
+[Serial console](#7-serial-console)). These commands work regardless of whether
+device provisioning succeeds.
+
+| Command | Description |
+|---------|-------------|
+| `bleatbox play <index>` | Play sound file `<index>.mp3` from the SD card |
+| `bleatbox volume <0-100>` | Set playback volume (runtime only, does not persist) |
