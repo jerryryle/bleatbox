@@ -85,8 +85,9 @@ static int parse_line(char *line)
 			LOG_ERR("'volume' requires a value");
 			return -EINVAL;
 		}
-		unsigned long v = strtoul(val, NULL, 10);
-		if (v > 100) {
+		char *end;
+		unsigned long v = strtoul(val, &end, 10);
+		if (end == val || v > 100) {
 			LOG_ERR("Volume must be 0-100, got: %s", val);
 			return -EINVAL;
 		}
@@ -114,7 +115,7 @@ int device_config_load(void)
 	ssize_t nread;
 
 	while ((nread = fs_read(&file, buf + pos, 1)) == 1) {
-		if (buf[pos] == '\n' || pos >= LINE_MAX - 2) {
+		if (buf[pos] == '\n') {
 			buf[pos + 1] = '\0';
 			ret = parse_line(buf);
 			if (ret) {
@@ -122,6 +123,18 @@ int device_config_load(void)
 				return ret;
 			}
 			pos = 0;
+		} else if (pos >= LINE_MAX - 2) {
+			buf[pos + 1] = '\0';
+			ret = parse_line(buf);
+			if (ret) {
+				fs_close(&file);
+				return ret;
+			}
+			pos = 0;
+			/* Drain the rest of this overlong line */
+			char ch;
+			while (fs_read(&file, &ch, 1) == 1 && ch != '\n') {
+			}
 		} else {
 			pos++;
 		}

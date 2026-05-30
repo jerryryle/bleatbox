@@ -130,6 +130,11 @@ K_THREAD_DEFINE(audio_tid, AUDIO_STACK_SIZE,
 /* Public API                                                         */
 /* ------------------------------------------------------------------ */
 
+bool audio_is_sd_mounted(void)
+{
+	return sd_mounted;
+}
+
 bool audio_is_playing(void)
 {
 	return playing;
