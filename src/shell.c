@@ -10,13 +10,16 @@
 
 #include "audio.h"
 #include "sdcard.h"
+#include "sounds.h"
 
 static int cmd_play(const struct shell *sh, size_t argc, char **argv)
 {
 	unsigned long idx = strtoul(argv[1], NULL, 0);
 
-	if (idx > 255) {
-		shell_error(sh, "Sound index must be 0-255");
+	uint8_t count = sounds_get_count();
+	if (!count || idx >= count) {
+		shell_error(sh, "Sound index must be 0-%u (%u available)",
+			    count ? count - 1 : 0, count);
 		return -EINVAL;
 	}
 

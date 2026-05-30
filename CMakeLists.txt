@@ -10,6 +10,7 @@ target_sources(app PRIVATE
     src/audio.c
     src/ble.c
     src/assignments.c
+    src/sounds.c
     src/device_config.c
     src/shell.c
 )

@@ -22,6 +22,7 @@
 #include "events.h"
 #include "vibration.h"
 #include "sdcard.h"
+#include "sounds.h"
 #include "audio.h"
 #include "ble.h"
 
@@ -109,6 +110,9 @@ int main(void)
 		k_sleep(K_FOREVER);
 		return 0;
 	}
+
+	/* --- Sound discovery --- */
+	sounds_scan();
 
 	/* --- Device configuration --- */
 	ret = device_config_load();
