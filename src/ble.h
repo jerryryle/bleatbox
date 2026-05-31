@@ -37,6 +37,6 @@ int ble_init(uint8_t device_id, struct k_msgq *event_q);
  *         negative errno on BLE failure.
  */
 int ble_advertise_assignments(const struct assignment *assignments,
-			      uint8_t count);
+                              uint8_t count);
 
 #endif /* BLE_H_ */

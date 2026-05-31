@@ -51,6 +51,8 @@ Tests use GoogleTest (C++), wrapping C code under test with `extern "C"`. Test f
 
 ## C Code Style
 
+Indentation is **4-wide spaces, not tabs**. Otherwise follow the [Zephyr coding style](https://docs.zephyrproject.org/latest/contribute/style/index.html) (Linux-kernel derived): function opening brace on its own line, control-statement brace on the same line.
+
 - Prefer `for (;;)` over `while (1)`
 - All file-scope `static` variables are prefixed with `g_`, including `const` hardware descriptors
 - Besides `g_`, no other type or storage prefixes should be used (no Hungarian notation)

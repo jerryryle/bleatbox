@@ -50,7 +50,6 @@ int vs1053b_write_data(const uint8_t *data, size_t len);
  */
 int vs1053b_write_reg(uint8_t reg, uint16_t val);
 
-
 /**
  * Start/stop the VS1053B's internal sine test tone.
  *

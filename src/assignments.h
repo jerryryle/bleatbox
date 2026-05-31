@@ -9,9 +9,9 @@
 
 /** A single device assignment (sound + delay). */
 struct assignment {
-	uint8_t  device_id;
-	uint8_t  sound;
-	uint16_t delay_ms;
+    uint8_t device_id;
+    uint8_t sound;
+    uint16_t delay_ms;
 };
 
 /**
@@ -24,8 +24,8 @@ struct assignment {
  * @param num_sounds    Number of available sounds.
  */
 void assignments_init(const uint8_t *peer_ids, uint8_t num_peers,
-		      uint16_t delay_min_ms, uint16_t delay_max_ms,
-		      uint8_t num_sounds);
+                      uint16_t delay_min_ms, uint16_t delay_max_ms,
+                      uint8_t num_sounds);
 
 /**
  * Generate random sound and delay assignments for the configured peers.

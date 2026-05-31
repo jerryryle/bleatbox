@@ -30,8 +30,8 @@ int accel_init(struct k_msgq *event_q, uint16_t threshold_mg);
  * @return 0 on success, negative errno on failure.
  */
 int accel_sample_xyz(struct sensor_value *x,
-		     struct sensor_value *y,
-		     struct sensor_value *z);
+                     struct sensor_value *y,
+                     struct sensor_value *z);
 
 /**
  * Temporarily set the ODR to 100 Hz for interactive sampling.
