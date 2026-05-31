@@ -67,17 +67,18 @@ static void handle_vibration(void)
 		return;
 	}
 
-	uint8_t num_peers;
-	const uint8_t *peer_ids = device_config_get_peers(&num_peers);
-
 	LOG_INF("Vibration detected — playing sound %u, broadcasting assignments",
 		VIBRATION_SOUND_INDEX);
 
 	struct ble_assignment assignments[DEVICE_CONFIG_MAX_PEERS];
-	assignments_generate(peer_ids, num_peers, assignments);
+	int n = assignments_generate(assignments);
+	if (n <= 0) {
+		LOG_ERR("Assignment generation failed: %d", n);
+		return;
+	}
 
 	audio_play_sound(VIBRATION_SOUND_INDEX);
-	ble_advertise_assignments(assignments, num_peers);
+	ble_advertise_assignments(assignments, n);
 }
 
 static void handle_ble_rx(const struct event *evt)
@@ -140,17 +141,20 @@ int main(void)
 	sounds_scan();
 
 	/* --- Device configuration --- */
-	ret = device_config_load();
+	struct device_config cfg;
+	ret = device_config_load(&cfg);
 	if (ret) {
 		LOG_ERR("Device config load failed — shell still available over USB");
 		k_sleep(K_FOREVER);
 		return 0;
 	}
-	uint8_t my_device_id = device_config_get_id();
-	LOG_INF("Device ID: 0x%02x", my_device_id);
 
 	/* --- Volume from config --- */
-	audio_set_volume(device_config_get_volume());
+	audio_set_volume(cfg.volume);
+
+	/* --- Assignment config --- */
+	assignments_init(cfg.peers, cfg.peer_count,
+			 cfg.delay_min_ms, cfg.delay_max_ms);
 
 	/* --- Vibration switch --- */
 	ret = vibration_init(&event_q);
@@ -159,7 +163,7 @@ int main(void)
 	}
 
 	/* --- BLE --- */
-	ret = ble_init(my_device_id, &event_q);
+	ret = ble_init(cfg.id, &event_q);
 	if (ret) {
 		return ret;
 	}

@@ -5,29 +5,21 @@
 
 #define DEVICE_CONFIG_MAX_PEERS 30
 
+struct device_config {
+	uint8_t id;
+	uint8_t peers[DEVICE_CONFIG_MAX_PEERS];
+	uint8_t peer_count;
+	uint8_t volume;
+	uint16_t delay_min_ms;
+	uint16_t delay_max_ms;
+};
+
 /**
  * Load device configuration from /SD:/bleatbox.cfg.
  *
+ * @param[out] cfg  Populated on success.
  * @return 0 on success, negative errno on failure.
  */
-int device_config_load(void);
-
-/** Return this device's configured ID. */
-uint8_t device_config_get_id(void);
-
-/**
- * Return the configured peer device ID list.
- *
- * @param[out] count  Number of peers.
- * @return Pointer to the peer ID array.
- */
-const uint8_t *device_config_get_peers(uint8_t *count);
-
-/**
- * Return the configured volume (0–100).
- *
- * Defaults to 80 if not set in the config file.
- */
-uint8_t device_config_get_volume(void);
+int device_config_load(struct device_config *cfg);
 
 #endif /* DEVICE_CONFIG_H_ */
