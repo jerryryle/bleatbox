@@ -51,7 +51,7 @@ LOG_MODULE_REGISTER(vs1053b, LOG_LEVEL_INF);
 
 #define ZUSER DT_PATH(zephyr_user)
 
-static const struct gpio_dt_spec vs_dreq =
+static const struct gpio_dt_spec g_vs_dreq =
 	GPIO_DT_SPEC_GET(ZUSER, vs1053b_dreq_gpios);
 
 /*
@@ -67,7 +67,7 @@ static const struct gpio_dt_spec vs_dreq =
  * Command clock <= CLKI/7 ~ 1.8 MHz at default 12.288 MHz CLKI.
  * 2 MHz is safe before and after the SCI_CLOCKF boost.
  */
-static const struct spi_config vs_cmd_spi_cfg = {
+static const struct spi_config g_vs_cmd_spi_cfg = {
 	.frequency = 2000000,
 	.operation = SPI_OP_MODE_MASTER | SPI_WORD_SET(8) | SPI_TRANSFER_MSB,
 	.cs = {
@@ -78,7 +78,7 @@ static const struct spi_config vs_cmd_spi_cfg = {
 };
 
 /* Data interface can run at CLKI/4 after clock boost. */
-static const struct spi_config vs_data_spi_cfg = {
+static const struct spi_config g_vs_data_spi_cfg = {
 	.frequency = 6000000,
 	.operation = SPI_OP_MODE_MASTER | SPI_WORD_SET(8) | SPI_TRANSFER_MSB,
 	.cs = {
@@ -89,7 +89,7 @@ static const struct spi_config vs_data_spi_cfg = {
 };
 
 /* Cached SPI device pointer, set during init. */
-static const struct device *spi;
+static const struct device *g_spi;
 
 /* ------------------------------------------------------------------ */
 /* Internal helpers                                                   */
@@ -111,7 +111,7 @@ static int vs_wait_dreq(void)
 {
 	int64_t deadline = k_uptime_get() + VS_DREQ_TIMEOUT_MS;
 
-	while (gpio_pin_get_dt(&vs_dreq) == 0) {
+	while (gpio_pin_get_dt(&g_vs_dreq) == 0) {
 		if (k_uptime_get() >= deadline) {
 			LOG_ERR("DREQ timeout — check wiring/power");
 			return -ETIMEDOUT;
@@ -136,7 +136,7 @@ static int vs_write_reg(uint8_t reg, uint16_t val)
 	int ret = vs_wait_dreq();
 	if (ret) return ret;
 
-	ret = spi_write(spi, &vs_cmd_spi_cfg, &tx_set);
+	ret = spi_write(g_spi, &g_vs_cmd_spi_cfg, &tx_set);
 	if (ret) {
 		LOG_ERR("SPI write failed: %d", ret);
 	}
@@ -162,7 +162,7 @@ static int vs_read_reg(uint8_t reg, uint16_t *val)
 	int ret = vs_wait_dreq();
 	if (ret) return ret;
 
-	ret = spi_transceive(spi, &vs_cmd_spi_cfg, &tx_set, &rx_set);
+	ret = spi_transceive(g_spi, &g_vs_cmd_spi_cfg, &tx_set, &rx_set);
 	if (ret) {
 		LOG_ERR("SPI read failed: %d", ret);
 		return ret;
@@ -215,7 +215,7 @@ int vs1053b_write_data(const uint8_t *data, size_t len)
 	int ret = vs_wait_dreq();
 	if (ret) return ret;
 
-	ret = spi_write(spi, &vs_data_spi_cfg, &tx_set);
+	ret = spi_write(g_spi, &g_vs_data_spi_cfg, &tx_set);
 	if (ret) {
 		LOG_ERR("SPI data write failed: %d", ret);
 	}
@@ -258,7 +258,7 @@ int vs1053b_sine_test(bool enable)
 
 int vs1053b_init(const struct device *spi_dev)
 {
-	spi = spi_dev;
+	g_spi = spi_dev;
 
 	/*
 	 * The SPI driver auto-configures CS GPIOs listed in the
@@ -267,21 +267,21 @@ int vs1053b_init(const struct device *spi_dev)
 	 * configures.  Set them up as outputs (inactive = deasserted)
 	 * before any SPI transactions.
 	 */
-	int ret = gpio_pin_configure_dt(&vs_cmd_spi_cfg.cs.gpio,
+	int ret = gpio_pin_configure_dt(&g_vs_cmd_spi_cfg.cs.gpio,
 					GPIO_OUTPUT_INACTIVE);
 	if (ret < 0) {
 		LOG_ERR("Failed to configure XCS: %d", ret);
 		return ret;
 	}
 
-	ret = gpio_pin_configure_dt(&vs_data_spi_cfg.cs.gpio,
+	ret = gpio_pin_configure_dt(&g_vs_data_spi_cfg.cs.gpio,
 				    GPIO_OUTPUT_INACTIVE);
 	if (ret < 0) {
 		LOG_ERR("Failed to configure XDCS: %d", ret);
 		return ret;
 	}
 
-	ret = gpio_pin_configure_dt(&vs_dreq, GPIO_INPUT);
+	ret = gpio_pin_configure_dt(&g_vs_dreq, GPIO_INPUT);
 	if (ret < 0) {
 		LOG_ERR("Failed to configure DREQ: %d", ret);
 		return ret;

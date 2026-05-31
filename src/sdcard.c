@@ -12,13 +12,13 @@
 
 LOG_MODULE_REGISTER(sdcard, LOG_LEVEL_INF);
 
-static FATFS fat_fs;
-static struct fs_mount_t mount_point = {
+static FATFS g_fat_fs;
+static struct fs_mount_t g_mount_point = {
 	.type = FS_FATFS,
-	.fs_data = &fat_fs,
+	.fs_data = &g_fat_fs,
 	.mnt_point = SDCARD_MOUNT_POINT,
 };
-static bool mounted;
+static bool g_mounted;
 
 int sdcard_mount(void)
 {
@@ -33,19 +33,19 @@ int sdcard_mount(void)
 	disk_access_ioctl(disk, DISK_IOCTL_GET_SECTOR_SIZE, &block_size);
 	LOG_INF("SD card: %u sectors, %u bytes/sector", block_count, block_size);
 
-	mount_point.storage_dev = (void *)disk;
-	int ret = fs_mount(&mount_point);
+	g_mount_point.storage_dev = (void *)disk;
+	int ret = fs_mount(&g_mount_point);
 	if (ret != 0) {
 		LOG_ERR("FAT mount failed: %d", ret);
 		return ret;
 	}
 
-	mounted = true;
-	LOG_INF("SD card mounted at %s", mount_point.mnt_point);
+	g_mounted = true;
+	LOG_INF("SD card mounted at %s", g_mount_point.mnt_point);
 	return 0;
 }
 
 bool sdcard_is_mounted(void)
 {
-	return mounted;
+	return g_mounted;
 }

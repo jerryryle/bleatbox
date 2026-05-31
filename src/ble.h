@@ -11,12 +11,7 @@
 #include <zephyr/kernel.h>
 #include <stdint.h>
 
-/** A single device assignment in a BLE broadcast. */
-struct ble_assignment {
-	uint8_t  device_id;
-	uint8_t  sound;
-	uint16_t delay_ms;
-};
+#include "assignments.h"
 
 /** Maximum assignments that fit in one broadcast packet. */
 #define BLE_MAX_ASSIGNMENTS 62
@@ -41,7 +36,7 @@ int ble_init(uint8_t device_id, struct k_msgq *event_q);
  * @return 0 on success, -EINVAL if count is too large, or a
  *         negative errno on BLE failure.
  */
-int ble_advertise_assignments(const struct ble_assignment *assignments,
+int ble_advertise_assignments(const struct assignment *assignments,
 			      uint8_t count);
 
 #endif /* BLE_H_ */

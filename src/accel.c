@@ -17,26 +17,26 @@ LOG_MODULE_REGISTER(accel, LOG_LEVEL_INF);
 #define LIS2DH_REG_CTRL1 0x20
 #define LIS2DH_ODR_100HZ_LP  0x57  /* ODR=100Hz, low-power, XYZ enabled */
 
-static const struct device *accel_dev =
+static const struct device *g_accel_dev =
 	DEVICE_DT_GET(DT_NODELABEL(lis2dh12));
 
-static const struct i2c_dt_spec i2c_spec =
+static const struct i2c_dt_spec g_i2c_spec =
 	I2C_DT_SPEC_GET(DT_NODELABEL(lis2dh12));
 
-static struct k_msgq *evt_q;
+static struct k_msgq *g_evt_q;
 
 static void accel_trigger_handler(const struct device *dev,
 				  const struct sensor_trigger *trig)
 {
 	struct event evt = { .type = EVENT_VIBRATION };
-	k_msgq_put(evt_q, &evt, K_NO_WAIT);
+	k_msgq_put(g_evt_q, &evt, K_NO_WAIT);
 }
 
 int accel_init(struct k_msgq *event_q, uint16_t threshold_mg)
 {
-	evt_q = event_q;
+	g_evt_q = event_q;
 
-	if (!device_is_ready(accel_dev)) {
+	if (!device_is_ready(g_accel_dev)) {
 		LOG_ERR("LIS2DH12 device not ready");
 		return -ENODEV;
 	}
@@ -48,7 +48,7 @@ int accel_init(struct k_msgq *event_q, uint16_t threshold_mg)
 		.val2 = ums2 % 1000000,
 	};
 
-	int ret = sensor_attr_set(accel_dev, SENSOR_CHAN_ACCEL_XYZ,
+	int ret = sensor_attr_set(g_accel_dev, SENSOR_CHAN_ACCEL_XYZ,
 				  SENSOR_ATTR_SLOPE_TH, &threshold_val);
 	if (ret) {
 		LOG_ERR("Failed to set slope threshold: %d", ret);
@@ -57,7 +57,7 @@ int accel_init(struct k_msgq *event_q, uint16_t threshold_mg)
 
 	/* Require 1 sample above threshold to trigger */
 	struct sensor_value dur_val = { .val1 = 1 };
-	ret = sensor_attr_set(accel_dev, SENSOR_CHAN_ACCEL_XYZ,
+	ret = sensor_attr_set(g_accel_dev, SENSOR_CHAN_ACCEL_XYZ,
 			      SENSOR_ATTR_SLOPE_DUR, &dur_val);
 	if (ret) {
 		LOG_ERR("Failed to set slope duration: %d", ret);
@@ -70,7 +70,7 @@ int accel_init(struct k_msgq *event_q, uint16_t threshold_mg)
 		.chan = SENSOR_CHAN_ACCEL_XYZ,
 	};
 
-	ret = sensor_trigger_set(accel_dev, &trig, accel_trigger_handler);
+	ret = sensor_trigger_set(g_accel_dev, &trig, accel_trigger_handler);
 	if (ret) {
 		LOG_ERR("Failed to set trigger: %d", ret);
 		return ret;
@@ -84,35 +84,35 @@ int accel_sample_xyz(struct sensor_value *x,
 		     struct sensor_value *y,
 		     struct sensor_value *z)
 {
-	int ret = sensor_sample_fetch(accel_dev);
+	int ret = sensor_sample_fetch(g_accel_dev);
 	if (ret) {
 		return ret;
 	}
 
-	ret = sensor_channel_get(accel_dev, SENSOR_CHAN_ACCEL_X, x);
+	ret = sensor_channel_get(g_accel_dev, SENSOR_CHAN_ACCEL_X, x);
 	if (ret) {
 		return ret;
 	}
-	ret = sensor_channel_get(accel_dev, SENSOR_CHAN_ACCEL_Y, y);
+	ret = sensor_channel_get(g_accel_dev, SENSOR_CHAN_ACCEL_Y, y);
 	if (ret) {
 		return ret;
 	}
-	return sensor_channel_get(accel_dev, SENSOR_CHAN_ACCEL_Z, z);
+	return sensor_channel_get(g_accel_dev, SENSOR_CHAN_ACCEL_Z, z);
 }
 
 int accel_odr_boost(uint8_t *prev_ctrl1)
 {
-	int ret = i2c_reg_read_byte_dt(&i2c_spec, LIS2DH_REG_CTRL1,
+	int ret = i2c_reg_read_byte_dt(&g_i2c_spec, LIS2DH_REG_CTRL1,
 				       prev_ctrl1);
 	if (ret) {
 		return ret;
 	}
-	return i2c_reg_write_byte_dt(&i2c_spec, LIS2DH_REG_CTRL1,
+	return i2c_reg_write_byte_dt(&g_i2c_spec, LIS2DH_REG_CTRL1,
 				     LIS2DH_ODR_100HZ_LP);
 }
 
 int accel_odr_restore(uint8_t prev_ctrl1)
 {
-	return i2c_reg_write_byte_dt(&i2c_spec, LIS2DH_REG_CTRL1,
+	return i2c_reg_write_byte_dt(&g_i2c_spec, LIS2DH_REG_CTRL1,
 				     prev_ctrl1);
 }

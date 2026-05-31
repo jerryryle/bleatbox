@@ -34,7 +34,7 @@ LOG_MODULE_REGISTER(bleatbox, LOG_LEVEL_INF);
 /* ------------------------------------------------------------------ */
 
 #define LED0_NODE DT_ALIAS(led0)
-static const struct gpio_dt_spec led = GPIO_DT_SPEC_GET(LED0_NODE, gpios);
+static const struct gpio_dt_spec g_led = GPIO_DT_SPEC_GET(LED0_NODE, gpios);
 
 /* ------------------------------------------------------------------ */
 /* Compile-time configuration                                         */
@@ -70,7 +70,7 @@ static void handle_vibration(void)
 	LOG_INF("Vibration detected — playing sound %u, broadcasting assignments",
 		VIBRATION_SOUND_INDEX);
 
-	struct ble_assignment assignments[DEVICE_CONFIG_MAX_PEERS];
+	struct assignment assignments[DEVICE_CONFIG_MAX_PEERS];
 	int n = assignments_generate(assignments);
 	if (n <= 0) {
 		LOG_ERR("Assignment generation failed: %d", n);
@@ -107,12 +107,12 @@ int main(void)
 	LOG_INF("BleatBox firmware starting");
 
 	/* --- Boot indicator (blink LED 3 times) --- */
-	if (gpio_is_ready_dt(&led)) {
-		gpio_pin_configure_dt(&led, GPIO_OUTPUT_INACTIVE);
+	if (gpio_is_ready_dt(&g_led)) {
+		gpio_pin_configure_dt(&g_led, GPIO_OUTPUT_INACTIVE);
 		for (int i = 0; i < 3; i++) {
-			gpio_pin_set_dt(&led, 1);
+			gpio_pin_set_dt(&g_led, 1);
 			k_msleep(100);
-			gpio_pin_set_dt(&led, 0);
+			gpio_pin_set_dt(&g_led, 0);
 			k_msleep(100);
 		}
 	}
@@ -154,7 +154,8 @@ int main(void)
 
 	/* --- Assignment config --- */
 	assignments_init(cfg.peers, cfg.peer_count,
-			 cfg.delay_min_ms, cfg.delay_max_ms);
+			 cfg.delay_min_ms, cfg.delay_max_ms,
+			 sounds_get_count());
 
 	/* --- Accelerometer (any-motion interrupt) --- */
 	ret = accel_init(&event_q, cfg.accel_threshold_mg);
@@ -172,7 +173,7 @@ int main(void)
 
 	/* --- Event loop --- */
 	struct event evt;
-	while (1) {
+	for (;;) {
 		/*
 		 * Block until an event arrives.  While blocked, the idle
 		 * thread runs and the nRF52840 enters System ON idle (ARM

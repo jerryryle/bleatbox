@@ -13,7 +13,7 @@
 
 LOG_MODULE_REGISTER(sounds, LOG_LEVEL_INF);
 
-static uint8_t sound_count;
+static uint8_t g_sound_count;
 
 int sounds_scan(void)
 {
@@ -71,11 +71,11 @@ int sounds_scan(void)
 
 	if (max_index < 0) {
 		LOG_WRN("No .flac files found on SD card");
-		sound_count = 0;
+		g_sound_count = 0;
 	} else {
-		sound_count = (uint8_t)(max_index + 1);
+		g_sound_count = (uint8_t)(max_index + 1);
 		LOG_INF("Found sounds 00-%02u (%u total)", max_index,
-			sound_count);
+			g_sound_count);
 	}
 
 	return 0;
@@ -83,5 +83,5 @@ int sounds_scan(void)
 
 uint8_t sounds_get_count(void)
 {
-	return sound_count;
+	return g_sound_count;
 }
