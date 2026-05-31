@@ -23,6 +23,8 @@ int vs1053b_init(const struct device *spi_dev);
  * @param percent  0 (silent) to 100 (maximum).
  * @return 0 on success, negative errno on failure.
  */
+int vs1053b_get_volume(uint8_t *percent);
+
 int vs1053b_set_volume(uint8_t percent);
 
 /**
@@ -36,6 +38,26 @@ int vs1053b_set_volume(uint8_t percent);
  * @return 0 on success, negative errno on failure.
  */
 int vs1053b_write_data(const uint8_t *data, size_t len);
+
+/**
+ * Write a 16-bit value to an SCI register.
+ *
+ * Waits for DREQ before writing.
+ *
+ * @param reg  Register address (0x00–0x0F).
+ * @param val  16-bit value to write.
+ * @return 0 on success, negative errno on failure.
+ */
+int vs1053b_write_reg(uint8_t reg, uint16_t val);
+
+
+/**
+ * Start/stop the VS1053B's internal sine test tone.
+ *
+ * @param enable  true to start, false to stop.
+ * @return 0 on success, negative errno on failure.
+ */
+int vs1053b_sine_test(bool enable);
 
 /** Size of one SDI data chunk (bytes). */
 #define VS1053B_DATA_CHUNK 32

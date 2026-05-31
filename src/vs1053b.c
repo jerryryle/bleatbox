@@ -28,9 +28,12 @@ LOG_MODULE_REGISTER(vs1053b, LOG_LEVEL_INF);
 #define VS_REG_MODE    0x00
 #define VS_REG_STATUS  0x01
 #define VS_REG_CLOCKF  0x03
+#define VS_REG_WRAM    0x06
+#define VS_REG_WRAMADDR 0x07
 #define VS_REG_VOL     0x0B
 
 #define VS_SM_RESET    BIT(2)
+#define VS_SM_TESTS    BIT(5)
 #define VS_SM_SDINEW   BIT(11)
 
 /*
@@ -173,6 +176,24 @@ static int vs_read_reg(uint8_t reg, uint16_t *val)
 /* Public API                                                         */
 /* ------------------------------------------------------------------ */
 
+int vs1053b_get_volume(uint8_t *percent)
+{
+	uint16_t reg;
+	int ret = vs_read_reg(VS_REG_VOL, &reg);
+	if (ret) {
+		return ret;
+	}
+
+	/* Use left channel (high byte). 0x00 = max, 0xFE = silence. */
+	unsigned int att = reg >> 8;
+	if (att >= 254) {
+		*percent = 0;
+	} else {
+		*percent = (uint8_t)((254 - att) * 100 / 254);
+	}
+	return 0;
+}
+
 int vs1053b_set_volume(uint8_t percent)
 {
 	if (percent > 100) {
@@ -183,7 +204,6 @@ int vs1053b_set_volume(uint8_t percent)
 	uint8_t att = (uint8_t)((uint16_t)(100 - percent) * 254 / 100);
 	uint16_t vol = ((uint16_t)att << 8) | att;
 
-	LOG_INF("Volume %u%% (register 0x%04x)", percent, vol);
 	return vs_write_reg(VS_REG_VOL, vol);
 }
 
@@ -202,16 +222,66 @@ int vs1053b_write_data(const uint8_t *data, size_t len)
 	return ret;
 }
 
+int vs1053b_write_reg(uint8_t reg, uint16_t val)
+{
+	return vs_write_reg(reg, val);
+}
+
+int vs1053b_sine_test(bool enable)
+{
+	int ret;
+
+	if (enable) {
+		ret = vs_write_reg(VS_REG_MODE, VS_SM_SDINEW | VS_SM_TESTS);
+		if (ret) return ret;
+		k_msleep(1);
+
+		/* 0x44 = ~4.4 kHz sine at 12.288 MHz XTALI */
+		uint8_t start[] = {
+			0x53, 0xEF, 0x6E, 0x44,
+			0x00, 0x00, 0x00, 0x00,
+		};
+		ret = vs1053b_write_data(start, sizeof(start));
+	} else {
+		uint8_t stop[] = {
+			0x45, 0x78, 0x69, 0x74,
+			0x00, 0x00, 0x00, 0x00,
+		};
+		ret = vs1053b_write_data(stop, sizeof(stop));
+		if (ret) return ret;
+		k_msleep(1);
+
+		ret = vs_write_reg(VS_REG_MODE, VS_SM_SDINEW);
+	}
+	return ret;
+}
+
 int vs1053b_init(const struct device *spi_dev)
 {
 	spi = spi_dev;
 
 	/*
-	 * XCS and XDCS GPIO configuration is handled by the SPI driver
-	 * via spi_cs_control — no manual setup needed.  Only DREQ
-	 * (a pure input, not tied to SPI) requires explicit configuration.
+	 * The SPI driver auto-configures CS GPIOs listed in the
+	 * controller's cs-gpios DT property, but XCS and XDCS come
+	 * from spi_config.cs — which the driver toggles but never
+	 * configures.  Set them up as outputs (inactive = deasserted)
+	 * before any SPI transactions.
 	 */
-	int ret = gpio_pin_configure_dt(&vs_dreq, GPIO_INPUT);
+	int ret = gpio_pin_configure_dt(&vs_cmd_spi_cfg.cs.gpio,
+					GPIO_OUTPUT_INACTIVE);
+	if (ret < 0) {
+		LOG_ERR("Failed to configure XCS: %d", ret);
+		return ret;
+	}
+
+	ret = gpio_pin_configure_dt(&vs_data_spi_cfg.cs.gpio,
+				    GPIO_OUTPUT_INACTIVE);
+	if (ret < 0) {
+		LOG_ERR("Failed to configure XDCS: %d", ret);
+		return ret;
+	}
+
+	ret = gpio_pin_configure_dt(&vs_dreq, GPIO_INPUT);
 	if (ret < 0) {
 		LOG_ERR("Failed to configure DREQ: %d", ret);
 		return ret;

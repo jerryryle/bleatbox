@@ -18,11 +18,25 @@
 int audio_init(void);
 
 /**
+ * Apply a VS1053B patch from the SD card.
+ *
+ * The file is a flat array of big-endian uint16_t words using
+ * the VLSI addr/count format (MSB of count = RLE flag).
+ * Must be called after audio_init() and sdcard_mount().
+ *
+ * @param path  Filesystem path to the .bin patch file.
+ * @return 0 on success, negative errno on failure.
+ */
+int audio_apply_patch(const char *path);
+
+/**
  * Set playback volume.
  *
  * @param percent  0 (silent) to 100 (maximum).
  * @return 0 on success, negative errno on failure.
  */
+int audio_get_volume(uint8_t *percent);
+
 int audio_set_volume(uint8_t percent);
 
 /**

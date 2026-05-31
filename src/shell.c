@@ -11,6 +11,7 @@
 #include "audio.h"
 #include "sdcard.h"
 #include "sounds.h"
+#include "vs1053b.h"
 
 static int cmd_play(const struct shell *sh, size_t argc, char **argv)
 {
@@ -41,7 +42,13 @@ static int cmd_play(const struct shell *sh, size_t argc, char **argv)
 static int cmd_volume(const struct shell *sh, size_t argc, char **argv)
 {
 	if (argc < 2) {
-		shell_print(sh, "Usage: bleatbox volume <0-100>");
+		uint8_t vol;
+		int ret = audio_get_volume(&vol);
+		if (ret) {
+			shell_error(sh, "Failed to read volume: %d", ret);
+			return ret;
+		}
+		shell_print(sh, "Volume: %u%%", vol);
 		return 0;
 	}
 
@@ -63,15 +70,28 @@ static int cmd_volume(const struct shell *sh, size_t argc, char **argv)
 	return 0;
 }
 
-SHELL_STATIC_SUBCMD_SET_CREATE(sub_bleatbox,
-	SHELL_CMD_ARG(play, NULL,
-		      "Play a sound: bleatbox play <index>",
-		      cmd_play, 2, 0),
-	SHELL_CMD_ARG(volume, NULL,
-		      "Set volume: bleatbox volume <0-100>",
-		      cmd_volume, 1, 1),
-	SHELL_SUBCMD_SET_END
-);
+static int cmd_sinetest(const struct shell *sh, size_t argc, char **argv)
+{
+	if (!strcmp(argv[1], "on")) {
+		shell_print(sh, "Sine test on — plug in headphones");
+		return vs1053b_sine_test(true);
+	} else if (!strcmp(argv[1], "off")) {
+		shell_print(sh, "Sine test off");
+		return vs1053b_sine_test(false);
+	}
 
-SHELL_CMD_REGISTER(bleatbox, &sub_bleatbox,
-		   "BleatBox test commands", NULL);
+	shell_error(sh, "Usage: sinetest on|off");
+	return -EINVAL;
+}
+
+SHELL_CMD_ARG_REGISTER(play, NULL,
+		       "Play a sound: play <index>",
+		       cmd_play, 2, 0);
+
+SHELL_CMD_ARG_REGISTER(sinetest, NULL,
+		       "VS1053B sine test: sinetest on|off",
+		       cmd_sinetest, 2, 0);
+
+SHELL_CMD_ARG_REGISTER(volume, NULL,
+		       "Get or set volume: volume [0-100]",
+		       cmd_volume, 1, 1);
