@@ -25,16 +25,16 @@ LOG_MODULE_REGISTER(audio, LOG_LEVEL_INF);
 /* Hardware                                                           */
 /* ------------------------------------------------------------------ */
 
-static const struct device *spi_dev = DEVICE_DT_GET(DT_NODELABEL(spi1));
+static const struct device *g_spi_dev = DEVICE_DT_GET(DT_NODELABEL(spi1));
 
 int audio_init(void)
 {
-	if (!device_is_ready(spi_dev)) {
+	if (!device_is_ready(g_spi_dev)) {
 		LOG_ERR("SPI device not ready");
 		return -ENODEV;
 	}
 
-	int ret = vs1053b_init(spi_dev);
+	int ret = vs1053b_init(g_spi_dev);
 	if (ret) {
 		LOG_ERR("VS1053B init failed: %d", ret);
 		return ret;
@@ -124,10 +124,10 @@ int audio_set_volume(uint8_t percent)
  * signaling the thread (no race window).  Read from ISR / scan
  * callback / main loop to gate event processing.
  */
-static volatile bool playing;
+static volatile bool g_playing;
 
-static uint8_t pending_sound;
-static K_SEM_DEFINE(play_sem, 0, 1);
+static uint8_t g_pending_sound;
+static K_SEM_DEFINE(g_play_sem, 0, 1);
 
 static void audio_thread_entry(void *p1, void *p2, void *p3)
 {
@@ -135,17 +135,10 @@ static void audio_thread_entry(void *p1, void *p2, void *p3)
 	ARG_UNUSED(p2);
 	ARG_UNUSED(p3);
 
-	while (1) {
-		k_sem_take(&play_sem, K_FOREVER);
+	for (;;) {
+		k_sem_take(&g_play_sem, K_FOREVER);
 
-		uint8_t sound_index = pending_sound;
-
-		if (!sdcard_is_mounted()) {
-			LOG_ERR("SD not mounted, cannot play sound %u",
-				sound_index);
-			playing = false;
-			continue;
-		}
+		uint8_t sound_index = g_pending_sound;
 
 		char path[32];
 		snprintf(path, sizeof(path), SDCARD_MOUNT_POINT "/%02u.flac",
@@ -156,7 +149,7 @@ static void audio_thread_entry(void *p1, void *p2, void *p3)
 		int ret = fs_open(&f, path, FS_O_READ);
 		if (ret < 0) {
 			LOG_ERR("Cannot open %s: %d", path, ret);
-			playing = false;
+			g_playing = false;
 			continue;
 		}
 
@@ -173,7 +166,7 @@ static void audio_thread_entry(void *p1, void *p2, void *p3)
 		}
 
 		fs_close(&f);
-		playing = false;
+		g_playing = false;
 		LOG_INF("Playback finished");
 	}
 }
@@ -191,17 +184,17 @@ K_THREAD_DEFINE(audio_tid, AUDIO_STACK_SIZE,
 
 bool audio_is_playing(void)
 {
-	return playing;
+	return g_playing;
 }
 
 void audio_play_sound(uint8_t sound_index)
 {
-	if (playing) {
+	if (g_playing) {
 		LOG_WRN("audio_play_sound called while already playing — ignored");
 		return;
 	}
 
-	pending_sound = sound_index;
-	playing = true;
-	k_sem_give(&play_sem);
+	g_pending_sound = sound_index;
+	g_playing = true;
+	k_sem_give(&g_play_sem);
 }

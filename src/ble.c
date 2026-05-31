@@ -39,18 +39,18 @@ LOG_MODULE_REGISTER(ble, LOG_LEVEL_INF);
 /* Module state                                                       */
 /* ------------------------------------------------------------------ */
 
-static uint8_t              local_device_id;
-static struct bt_le_ext_adv *adv_set;
-static struct k_msgq        *evt_q;
+static uint8_t              g_local_device_id;
+static struct bt_le_ext_adv *g_adv_set;
+static struct k_msgq        *g_evt_q;
 
 #define MFG_DATA_MAX_SIZE (HEADER_SIZE + BLE_MAX_ASSIGNMENTS * ASSIGNMENT_ENTRY_SIZE)
-static uint8_t mfg_data[MFG_DATA_MAX_SIZE];
+static uint8_t g_mfg_data[MFG_DATA_MAX_SIZE];
 
 /* ------------------------------------------------------------------ */
 /* Advertising (transmit)                                             */
 /* ------------------------------------------------------------------ */
 
-int ble_advertise_assignments(const struct ble_assignment *assignments,
+int ble_advertise_assignments(const struct assignment *assignments,
 			      uint8_t count)
 {
 	if (count > BLE_MAX_ASSIGNMENTS) {
@@ -60,25 +60,25 @@ int ble_advertise_assignments(const struct ble_assignment *assignments,
 	}
 
 	/* Build manufacturer data */
-	mfg_data[0] = COMPANY_ID_LO;
-	mfg_data[1] = COMPANY_ID_HI;
-	mfg_data[2] = MAGIC_BYTE;
+	g_mfg_data[0] = COMPANY_ID_LO;
+	g_mfg_data[1] = COMPANY_ID_HI;
+	g_mfg_data[2] = MAGIC_BYTE;
 
 	for (int i = 0; i < count; i++) {
 		int offset = HEADER_SIZE + i * ASSIGNMENT_ENTRY_SIZE;
 
-		mfg_data[offset + 0] = assignments[i].device_id;
-		mfg_data[offset + 1] = assignments[i].sound;
-		sys_put_le16(assignments[i].delay_ms, &mfg_data[offset + 2]);
+		g_mfg_data[offset + 0] = assignments[i].device_id;
+		g_mfg_data[offset + 1] = assignments[i].sound;
+		sys_put_le16(assignments[i].delay_ms, &g_mfg_data[offset + 2]);
 	}
 
 	uint8_t mfg_data_size = HEADER_SIZE + count * ASSIGNMENT_ENTRY_SIZE;
 
 	struct bt_data ad[] = {
-		BT_DATA(BT_DATA_MANUFACTURER_DATA, mfg_data, mfg_data_size),
+		BT_DATA(BT_DATA_MANUFACTURER_DATA, g_mfg_data, mfg_data_size),
 	};
 
-	int ret = bt_le_ext_adv_set_data(adv_set, ad, ARRAY_SIZE(ad),
+	int ret = bt_le_ext_adv_set_data(g_adv_set, ad, ARRAY_SIZE(ad),
 					 NULL, 0);
 	if (ret) {
 		LOG_ERR("Failed to set adv data: %d", ret);
@@ -95,7 +95,7 @@ int ble_advertise_assignments(const struct ble_assignment *assignments,
 		.num_events = 5,
 	};
 
-	ret = bt_le_ext_adv_start(adv_set, &start);
+	ret = bt_le_ext_adv_start(g_adv_set, &start);
 	if (ret) {
 		LOG_ERR("Failed to start adv: %d", ret);
 		return ret;
@@ -151,7 +151,7 @@ static void scan_recv_cb(const struct bt_le_scan_recv_info *info,
 		int num_entries = (data_len - HEADER_SIZE) / ASSIGNMENT_ENTRY_SIZE;
 		for (int i = 0; i < num_entries; i++) {
 			int off = HEADER_SIZE + i * ASSIGNMENT_ENTRY_SIZE;
-			if (data[off] != local_device_id) {
+			if (data[off] != g_local_device_id) {
 				continue;
 			}
 
@@ -170,12 +170,12 @@ static void scan_recv_cb(const struct bt_le_scan_recv_info *info,
 			 * is silently dropped — which is the desired
 			 * behavior.
 			 */
-			k_msgq_put(evt_q, &evt, K_NO_WAIT);
+			k_msgq_put(g_evt_q, &evt, K_NO_WAIT);
 			goto done;
 		}
 
 		/* Expected when we receive our own broadcast — self is excluded. */
-		LOG_DBG("Device ID 0x%02x not in broadcast", local_device_id);
+		LOG_DBG("Device ID 0x%02x not in broadcast", g_local_device_id);
 		goto done;
 	}
 
@@ -183,7 +183,7 @@ done:
 	net_buf_simple_restore(buf, &state);
 }
 
-static struct bt_le_scan_cb scan_cbs = {
+static struct bt_le_scan_cb g_scan_cbs = {
 	.recv = scan_recv_cb,
 };
 
@@ -212,7 +212,7 @@ static struct bt_le_scan_cb scan_cbs = {
 #define SCAN_INTERVAL  0x0030
 #define SCAN_WINDOW    0x0030
 
-static const struct bt_le_scan_param scan_params = {
+static const struct bt_le_scan_param g_scan_params = {
 	.type = BT_LE_SCAN_TYPE_PASSIVE,
 	.options = BT_LE_SCAN_OPT_NONE,
 	.interval = SCAN_INTERVAL,
@@ -225,8 +225,8 @@ static const struct bt_le_scan_param scan_params = {
 
 int ble_init(uint8_t device_id, struct k_msgq *event_q)
 {
-	local_device_id = device_id;
-	evt_q           = event_q;
+	g_local_device_id = device_id;
+	g_evt_q           = event_q;
 
 	int ret = bt_enable(NULL);
 	if (ret) {
@@ -248,15 +248,15 @@ int ble_init(uint8_t device_id, struct k_msgq *event_q)
 				     0x0030,   /* 48 x 0.625 ms = 30 ms */
 				     NULL);
 
-	ret = bt_le_ext_adv_create(&adv_params, NULL, &adv_set);
+	ret = bt_le_ext_adv_create(&adv_params, NULL, &g_adv_set);
 	if (ret) {
 		LOG_ERR("Failed to create extended adv set: %d", ret);
 		return ret;
 	}
 
-	bt_le_scan_cb_register(&scan_cbs);
+	bt_le_scan_cb_register(&g_scan_cbs);
 
-	ret = bt_le_scan_start(&scan_params, NULL);
+	ret = bt_le_scan_start(&g_scan_params, NULL);
 	if (ret) {
 		LOG_ERR("Scanning failed to start: %d", ret);
 		return ret;
