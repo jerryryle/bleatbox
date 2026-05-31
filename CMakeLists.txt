@@ -4,7 +4,7 @@ project(bleatbox)
 
 target_sources(app PRIVATE
     src/main.c
-    src/vibration.c
+    src/accel.c
     src/vs1053b.c
     src/sdcard.c
     src/audio.c

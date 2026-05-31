@@ -8,6 +8,7 @@
 #include <zephyr/shell/shell.h>
 #include <stdlib.h>
 
+#include "accel.h"
 #include "audio.h"
 #include "sdcard.h"
 #include "sounds.h"
@@ -95,3 +96,55 @@ SHELL_CMD_ARG_REGISTER(sinetest, NULL,
 SHELL_CMD_ARG_REGISTER(volume, NULL,
 		       "Get or set volume: volume [0-100]",
 		       cmd_volume, 1, 1);
+
+static int cmd_accel(const struct shell *sh, size_t argc, char **argv)
+{
+	unsigned long count = 200;
+
+	if (argc >= 2) {
+		char *end;
+		count = strtoul(argv[1], &end, 10);
+		if (end == argv[1] || count == 0) {
+			shell_error(sh, "Count must be a positive integer");
+			return -EINVAL;
+		}
+	}
+
+	uint8_t prev_ctrl1;
+	int ret = accel_odr_boost(&prev_ctrl1);
+	if (ret) {
+		shell_error(sh, "Failed to boost ODR: %d", ret);
+		return ret;
+	}
+
+	/* Let the new ODR settle */
+	k_msleep(20);
+
+	shell_print(sh, "Sampling %lu readings at ~100 Hz (values in mg)...",
+		    count);
+
+	for (unsigned long i = 0; i < count; i++) {
+		struct sensor_value x, y, z;
+
+		ret = accel_sample_xyz(&x, &y, &z);
+		if (ret) {
+			shell_error(sh, "Sample failed: %d", ret);
+			break;
+		}
+
+		int32_t x_mg = x.val1 * 1000 + x.val2 / 1000;
+		int32_t y_mg = y.val1 * 1000 + y.val2 / 1000;
+		int32_t z_mg = z.val1 * 1000 + z.val2 / 1000;
+
+		shell_print(sh, "X=%6d  Y=%6d  Z=%6d", x_mg, y_mg, z_mg);
+
+		k_msleep(10);
+	}
+
+	accel_odr_restore(prev_ctrl1);
+	return 0;
+}
+
+SHELL_CMD_ARG_REGISTER(accel, NULL,
+		       "Sample accelerometer: accel [count] (default 200)",
+		       cmd_accel, 1, 1);

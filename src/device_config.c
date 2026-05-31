@@ -111,6 +111,20 @@ static int parse_line(char *line, struct device_config *cfg, bool *has_id)
 			return -EINVAL;
 		}
 		cfg->delay_max_ms = (uint16_t)v;
+	} else if (strcmp(key, "accel_threshold") == 0) {
+		char *val = strtok_r(NULL, " \t\r\n", &saveptr);
+		if (!val) {
+			LOG_ERR("'accel_threshold' requires a value");
+			return -EINVAL;
+		}
+		char *end;
+		unsigned long v = strtoul(val, &end, 10);
+		if (end == val || v == 0 || v > UINT16_MAX) {
+			LOG_ERR("accel_threshold must be 1-%u mg, got: %s",
+				UINT16_MAX, val);
+			return -EINVAL;
+		}
+		cfg->accel_threshold_mg = (uint16_t)v;
 	} else {
 		LOG_WRN("Unknown config key: %s", key);
 	}
@@ -123,6 +137,7 @@ int device_config_load(struct device_config *cfg)
 	*cfg = (struct device_config){
 		.volume = 80,
 		.delay_max_ms = 2000,
+		.accel_threshold_mg = 200,
 	};
 
 	bool has_id = false;
@@ -189,6 +204,7 @@ int device_config_load(struct device_config *cfg)
 	LOG_INF("Device ID: 0x%02x", cfg->id);
 	LOG_HEXDUMP_INF(cfg->peers, cfg->peer_count, "Peers:");
 	LOG_INF("Delay range: %u–%u ms", cfg->delay_min_ms, cfg->delay_max_ms);
+	LOG_INF("Accel threshold: %u mg", cfg->accel_threshold_mg);
 
 	return 0;
 }

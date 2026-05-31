@@ -8,13 +8,20 @@ vibration.
 
 - **MCU:** Adafruit Feather nRF52840 Express
 - **Audio:** Adafruit Music Maker FeatherWing w/ Amp (VS1053B codec)
-- **Trigger:** SW-18010P vibration switch wired to pin A0 (P0.04) and GND
+- **Trigger:** LIS2DH12TR accelerometer on I2C0, INT1 on pin A0 (P0.04)
 
-### Wiring the vibration switch
+### Wiring the accelerometer
 
-Connect one leg of the SW-18010P to Feather pin **A0** and the other to **GND**.
-The firmware enables the nRF52840's internal pull-up resistor, so no external
-resistor is required.
+Connect an LIS2DH12TR breakout board to the Feather header:
+
+| Breakout Pin | Feather Pin | Notes |
+|---|---|---|
+| VIN | 3V | 3.3V supply |
+| GND | GND | Ground |
+| SDA | SDA | I2C data |
+| SCL | SCL | I2C clock |
+| SDO/SA0 | GND | Sets I2C address to 0x18 |
+| INT1 | A0 | Any-motion interrupt |
 
 ### SD card
 
@@ -205,6 +212,9 @@ peers 0x01 0x42 0xb7 0x05 0x9c
 
 # Playback volume (0 = silent, 100 = max, default 80)
 volume 80
+
+# Accelerometer any-motion threshold in milli-g (default 200)
+accel_threshold 150
 ```
 
 - **`id`** — a single hex byte (`0x00`–`0xFF`) that uniquely identifies this
@@ -213,11 +223,14 @@ volume 80
   network. Up to 30 peers are supported.
 - **`volume`** *(optional)* — playback volume, 0–100. Defaults to 80 if
   omitted.
+- **`accel_threshold`** *(optional)* — any-motion detection threshold in
+  milli-g. Defaults to 200 if omitted. Use the `accel` shell command to find
+  the right value for your setup.
 - Lines starting with `#` are comments.
 - Hex values accept a `0x` prefix or bare hex digits.
 
-Both `id` and `peers` are required. `volume` is optional. If the file is
-missing or malformed, the firmware logs an error and halts.
+Both `id` and `peers` are required. All other fields are optional. If the file
+is missing or malformed, the firmware logs an error and halts.
 
 ### Provisioning workflow
 
@@ -246,3 +259,4 @@ device provisioning succeeds.
 |---------|-------------|
 | `bleatbox play <index>` | Play sound file `<index>.flac` from the SD card |
 | `bleatbox volume <0-100>` | Set playback volume (runtime only, does not persist) |
+| `bleatbox accel [count]` | Sample accelerometer at 100 Hz and print XYZ in milli-g (default 200 samples) |

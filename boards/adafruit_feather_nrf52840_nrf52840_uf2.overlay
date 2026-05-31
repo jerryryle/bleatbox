@@ -1,31 +1,28 @@
 /*
  * Devicetree overlay for Adafruit Feather nRF52840 Express
- * with Adafruit Music Maker FeatherWing (VS1053B + SD card).
+ * with Adafruit Music Maker FeatherWing (VS1053B + SD card)
+ * and LIS2DH12TR accelerometer.
  *
  * Feather pin mapping (nRF52840 GPIO):
  *   D5  = P1.08  ->  SD card CS (directly on FeatherWing)
  *   D6  = P0.07  ->  VS1053B XCS  (SCI command chip select)
  *   D9  = P0.26  ->  VS1053B DREQ (data request, active high)
  *   D10 = P0.27  ->  VS1053B XDCS (SDI data chip select)
- *   A0  = P0.04  ->  SW-18010P vibration switch (external pull-up via internal)
+ *   A0  = P0.04  ->  LIS2DH12TR INT1 (any-motion interrupt)
  *
  *   SPI bus (feather header):
  *     SCK  = P0.14
  *     MOSI = P0.13
  *     MISO = P0.15
+ *
+ *   I2C bus (feather header):
+ *     SDA  = P0.12
+ *     SCL  = P0.11
  */
 
 / {
 	aliases {
 		sdhc0 = &sdhc0;
-	};
-
-	vibration_switch: vibration_switch {
-		compatible = "gpio-keys";
-		vibration_sw: vibration_sw {
-			gpios = <&gpio0 4 (GPIO_PULL_UP | GPIO_ACTIVE_LOW)>;
-			label = "Vibration switch (SW-18010P)";
-		};
 	};
 
 	/*
@@ -38,6 +35,16 @@
 		vs1053b-xcs-gpios = <&gpio0 7 GPIO_ACTIVE_LOW>;
 		vs1053b-xdcs-gpios = <&gpio0 27 GPIO_ACTIVE_LOW>;
 		vs1053b-dreq-gpios = <&gpio0 26 GPIO_ACTIVE_HIGH>;
+	};
+};
+
+&i2c0 {
+	lis2dh12: lis2dh12@18 {
+		compatible = "st,lis2dh12", "st,lis2dh";
+		reg = <0x18>;
+		irq-gpios = <&gpio0 4 GPIO_ACTIVE_HIGH>;
+		anym-on-int1;
+		disconnect-sdo-sa0-pull-up;
 	};
 };
 
