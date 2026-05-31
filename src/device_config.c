@@ -12,14 +12,6 @@ LOG_MODULE_REGISTER(device_config, LOG_LEVEL_INF);
 #define CONFIG_PATH SDCARD_MOUNT_POINT "/bleatbox.cfg"
 #define LINE_MAX    256
 
-#define DEFAULT_VOLUME 80
-
-static uint8_t device_id;
-static uint8_t peers[DEVICE_CONFIG_MAX_PEERS];
-static uint8_t peer_count;
-static bool has_id;
-static uint8_t volume = DEFAULT_VOLUME;
-
 static int parse_hex_byte(const char *s, uint8_t *out)
 {
 	char *end;
@@ -32,7 +24,7 @@ static int parse_hex_byte(const char *s, uint8_t *out)
 	return 0;
 }
 
-static int parse_line(char *line)
+static int parse_line(char *line, struct device_config *cfg, bool *has_id)
 {
 	while (*line == ' ' || *line == '\t') {
 		line++;
@@ -55,28 +47,28 @@ static int parse_line(char *line)
 			LOG_ERR("'id' requires a value");
 			return -EINVAL;
 		}
-		if (parse_hex_byte(val, &device_id)) {
+		if (parse_hex_byte(val, &cfg->id)) {
 			LOG_ERR("Invalid id value: %s", val);
 			return -EINVAL;
 		}
-		has_id = true;
+		*has_id = true;
 	} else if (strcmp(key, "peers") == 0) {
-		peer_count = 0;
+		cfg->peer_count = 0;
 		char *val;
 
 		while ((val = strtok_r(NULL, " \t\r\n", &saveptr)) != NULL) {
-			if (peer_count >= DEVICE_CONFIG_MAX_PEERS) {
+			if (cfg->peer_count >= DEVICE_CONFIG_MAX_PEERS) {
 				LOG_ERR("Too many peers (max %d)",
 					DEVICE_CONFIG_MAX_PEERS);
 				return -ENOSPC;
 			}
-			if (parse_hex_byte(val, &peers[peer_count])) {
+			if (parse_hex_byte(val, &cfg->peers[cfg->peer_count])) {
 				LOG_ERR("Invalid peer value: %s", val);
 				return -EINVAL;
 			}
-			peer_count++;
+			cfg->peer_count++;
 		}
-		if (peer_count == 0) {
+		if (cfg->peer_count == 0) {
 			LOG_ERR("'peers' requires at least one value");
 			return -EINVAL;
 		}
@@ -92,7 +84,33 @@ static int parse_line(char *line)
 			LOG_ERR("Volume must be 0-100, got: %s", val);
 			return -EINVAL;
 		}
-		volume = (uint8_t)v;
+		cfg->volume = (uint8_t)v;
+	} else if (strcmp(key, "delay_min") == 0) {
+		char *val = strtok_r(NULL, " \t\r\n", &saveptr);
+		if (!val) {
+			LOG_ERR("'delay_min' requires a value");
+			return -EINVAL;
+		}
+		char *end;
+		unsigned long v = strtoul(val, &end, 10);
+		if (end == val || v > UINT16_MAX) {
+			LOG_ERR("delay_min must be 0-%u, got: %s", UINT16_MAX, val);
+			return -EINVAL;
+		}
+		cfg->delay_min_ms = (uint16_t)v;
+	} else if (strcmp(key, "delay_max") == 0) {
+		char *val = strtok_r(NULL, " \t\r\n", &saveptr);
+		if (!val) {
+			LOG_ERR("'delay_max' requires a value");
+			return -EINVAL;
+		}
+		char *end;
+		unsigned long v = strtoul(val, &end, 10);
+		if (end == val || v > UINT16_MAX) {
+			LOG_ERR("delay_max must be 0-%u, got: %s", UINT16_MAX, val);
+			return -EINVAL;
+		}
+		cfg->delay_max_ms = (uint16_t)v;
 	} else {
 		LOG_WRN("Unknown config key: %s", key);
 	}
@@ -100,8 +118,15 @@ static int parse_line(char *line)
 	return 0;
 }
 
-int device_config_load(void)
+int device_config_load(struct device_config *cfg)
 {
+	*cfg = (struct device_config){
+		.volume = 80,
+		.delay_max_ms = 2000,
+	};
+
+	bool has_id = false;
+
 	struct fs_file_t file;
 	fs_file_t_init(&file);
 
@@ -118,7 +143,7 @@ int device_config_load(void)
 	while ((nread = fs_read(&file, buf + pos, 1)) == 1) {
 		if (buf[pos] == '\n') {
 			buf[pos + 1] = '\0';
-			ret = parse_line(buf);
+			ret = parse_line(buf, cfg, &has_id);
 			if (ret) {
 				fs_close(&file);
 				return ret;
@@ -126,7 +151,7 @@ int device_config_load(void)
 			pos = 0;
 		} else if (pos >= LINE_MAX - 2) {
 			buf[pos + 1] = '\0';
-			ret = parse_line(buf);
+			ret = parse_line(buf, cfg, &has_id);
 			if (ret) {
 				fs_close(&file);
 				return ret;
@@ -143,7 +168,7 @@ int device_config_load(void)
 
 	if (pos > 0) {
 		buf[pos] = '\0';
-		ret = parse_line(buf);
+		ret = parse_line(buf, cfg, &has_id);
 		if (ret) {
 			fs_close(&file);
 			return ret;
@@ -156,29 +181,14 @@ int device_config_load(void)
 		LOG_ERR("Config file missing 'id'");
 		return -EINVAL;
 	}
-	if (peer_count == 0) {
+	if (cfg->peer_count == 0) {
 		LOG_ERR("Config file missing 'peers'");
 		return -EINVAL;
 	}
 
-	LOG_INF("Device ID: 0x%02x", device_id);
-	LOG_HEXDUMP_INF(peers, peer_count, "Peers:");
+	LOG_INF("Device ID: 0x%02x", cfg->id);
+	LOG_HEXDUMP_INF(cfg->peers, cfg->peer_count, "Peers:");
+	LOG_INF("Delay range: %u–%u ms", cfg->delay_min_ms, cfg->delay_max_ms);
 
 	return 0;
-}
-
-uint8_t device_config_get_id(void)
-{
-	return device_id;
-}
-
-const uint8_t *device_config_get_peers(uint8_t *count)
-{
-	*count = peer_count;
-	return peers;
-}
-
-uint8_t device_config_get_volume(void)
-{
-	return volume;
 }
