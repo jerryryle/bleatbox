@@ -3,7 +3,7 @@
  *
  * Hardware: Adafruit Feather nRF52840 Express
  *           Adafruit Music Maker FeatherWing (VS1053B codec + SD card)
- *           SW-18010P vibration switch on A0 (P0.04)
+ *           LIS2DH12TR accelerometer on I2C0, INT1 on A0 (P0.04)
  *
  * Architecture: event-driven main loop.
  *
@@ -21,7 +21,7 @@
 #include "assignments.h"
 #include "device_config.h"
 #include "events.h"
-#include "vibration.h"
+#include "accel.h"
 #include "sdcard.h"
 #include "sounds.h"
 #include "audio.h"
@@ -156,8 +156,8 @@ int main(void)
 	assignments_init(cfg.peers, cfg.peer_count,
 			 cfg.delay_min_ms, cfg.delay_max_ms);
 
-	/* --- Vibration switch --- */
-	ret = vibration_init(&event_q);
+	/* --- Accelerometer (any-motion interrupt) --- */
+	ret = accel_init(&event_q, cfg.accel_threshold_mg);
 	if (ret) {
 		return ret;
 	}

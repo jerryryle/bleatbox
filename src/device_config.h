@@ -12,6 +12,7 @@ struct device_config {
 	uint8_t volume;
 	uint16_t delay_min_ms;
 	uint16_t delay_max_ms;
+	uint16_t accel_threshold_mg;
 };
 
 /**
