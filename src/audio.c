@@ -44,6 +44,71 @@ int audio_init(void)
 	return 0;
 }
 
+
+/*
+ * Read one big-endian uint16_t from the file.
+ * Returns 0 on success, -EIO on short/failed read.
+ */
+static int read_u16(struct fs_file_t *f, uint16_t *val)
+{
+	uint8_t buf[2];
+
+	if (fs_read(f, buf, 2) != 2) {
+		return -EIO;
+	}
+	*val = ((uint16_t)buf[0] << 8) | buf[1];
+	return 0;
+}
+
+int audio_apply_patch(const char *path)
+{
+	struct fs_file_t f;
+	fs_file_t_init(&f);
+
+	int ret = fs_open(&f, path, FS_O_READ);
+	if (ret < 0) {
+		LOG_ERR("Cannot open patch %s: %d", path, ret);
+		return ret;
+	}
+
+	/*
+	 * Record format: [register: 1 byte] [count: 2 bytes BE]
+	 *                [data: count * 2 bytes, each BE uint16_t]
+	 */
+	uint8_t reg;
+	while (fs_read(&f, &reg, 1) == 1) {
+		uint16_t count;
+		if (read_u16(&f, &count)) {
+			ret = -EIO;
+			break;
+		}
+
+		for (uint16_t i = 0; i < count; i++) {
+			uint16_t val;
+			if (read_u16(&f, &val)) {
+				ret = -EIO;
+				goto out;
+			}
+			ret = vs1053b_write_reg(reg, val);
+			if (ret) goto out;
+		}
+	}
+
+out:
+	fs_close(&f);
+	if (ret) {
+		LOG_ERR("Patch %s failed: %d", path, ret);
+	} else {
+		LOG_INF("Patch %s applied", path);
+	}
+	return ret;
+}
+
+int audio_get_volume(uint8_t *percent)
+{
+	return vs1053b_get_volume(percent);
+}
+
 int audio_set_volume(uint8_t percent)
 {
 	return vs1053b_set_volume(percent);

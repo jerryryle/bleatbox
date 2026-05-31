@@ -110,9 +110,9 @@ int main(void)
 		gpio_pin_configure_dt(&led, GPIO_OUTPUT_INACTIVE);
 		for (int i = 0; i < 3; i++) {
 			gpio_pin_set_dt(&led, 1);
-			k_msleep(200);
+			k_msleep(100);
 			gpio_pin_set_dt(&led, 0);
-			k_msleep(200);
+			k_msleep(100);
 		}
 	}
 
@@ -128,6 +128,12 @@ int main(void)
 		LOG_ERR("SD card mount failed — shell still available over USB");
 		k_sleep(K_FOREVER);
 		return 0;
+	}
+
+	/* --- VS1053B patches (must precede playback) --- */
+	ret = audio_apply_patch(SDCARD_MOUNT_POINT "/flaclatm.bin");
+	if (ret) {
+		LOG_WRN("No codec patches loaded (%d) — playback may be limited", ret);
 	}
 
 	/* --- Sound discovery --- */
