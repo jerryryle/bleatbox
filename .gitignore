@@ -12,6 +12,9 @@ build/
 build-tests/
 build-patches/
 
+# Folder for staging SD card contents
+stage-sd/
+
 # Python virtual environment
 .venv/
 __pycache__/
