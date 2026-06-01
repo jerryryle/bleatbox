@@ -25,8 +25,8 @@ Connect an LIS2DH12TR breakout board to the Feather header:
 
 ### SD card
 
-Format a microSD card as **FAT32**. Place FLAC files in the root directory named
-with zero-padded two-digit indices: `00.flac`, `01.flac`, ..., up to `99.flac`.
+Format a microSD card as **FAT32**. Place mp3 files in the root directory named
+with zero-padded two-digit indices: `00.mp3`, `01.mp3`, ..., up to `99.mp3`.
 The firmware scans the card at boot and auto-discovers available sounds. The SD
 card also holds the device configuration file (see
 [Device Configuration](#device-configuration) below). Insert into the Music
@@ -238,7 +238,7 @@ is missing or malformed, the firmware logs an error and halts.
    five-device network).
 2. For each device, create a `bleatbox.cfg` with that device's `id` and the IDs
    of all the *other* devices as `peers`.
-3. Copy the file to the device's SD card alongside the FLAC files.
+3. Copy the file to the device's SD card alongside the mp3 files.
 4. Boot the device. The log output confirms the loaded configuration:
    ```
    [00:00:00.xxx,xxx] <inf> device_config: Device ID: 0xa3
@@ -257,6 +257,6 @@ device provisioning succeeds.
 
 | Command | Description |
 |---------|-------------|
-| `bleatbox play <index>` | Play sound file `<index>.flac` from the SD card |
+| `bleatbox play <index>` | Play sound file `<index>.mp3` from the SD card |
 | `bleatbox volume <0-100>` | Set playback volume (runtime only, does not persist) |
 | `bleatbox accel [count]` | Sample accelerometer at 100 Hz and print XYZ in milli-g (default 200 samples) |

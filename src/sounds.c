@@ -1,5 +1,5 @@
 /*
- * Sound discovery — scan the SD card for numbered FLAC files.
+ * Sound discovery — scan the SD card for numbered MP3 files.
  */
 
 #include <zephyr/fs/fs.h>
@@ -35,7 +35,7 @@ int sounds_scan(void)
         }
 
         const char *dot = strrchr(entry.name, '.');
-        if (!dot || strcmp(dot, ".flac") != 0) {
+        if (!dot || strcmp(dot, ".mp3") != 0) {
             continue;
         }
 
@@ -70,7 +70,7 @@ int sounds_scan(void)
     fs_closedir(&dir);
 
     if (max_index < 0) {
-        LOG_WRN("No .flac files found on SD card");
+        LOG_WRN("No .mp3 files found on SD card");
         g_sound_count = 0;
     } else {
         g_sound_count = (uint8_t)(max_index + 1);

@@ -33,6 +33,7 @@ LOG_MODULE_REGISTER(vs1053b, LOG_LEVEL_INF);
 #define VS_REG_VOL 0x0B
 
 #define VS_SM_RESET BIT(2)
+#define VS_SM_CANCEL BIT(3)
 #define VS_SM_TESTS BIT(5)
 #define VS_SM_SDINEW BIT(11)
 
@@ -98,11 +99,9 @@ static const struct device *g_spi;
 /*
  * Wait for DREQ to go high (VS1053B ready for data/commands).
  *
- * Uses k_yield() rather than a DREQ-edge interrupt+semaphore because
- * DREQ toggles every 32-byte chunk during audio streaming (~0.3 ms at
- * 128 kbps).  The interrupt setup/teardown overhead per chunk would
- * exceed the polling cost.  k_yield() lets other threads run between
- * checks while keeping wake-up latency to one scheduler tick.
+ * Sleeps 1 ms between polls so lower-priority threads (shell, logging)
+ * can run during audio streaming.  DREQ reasserts in ~0.3 ms at typical
+ * bitrates; the codec's 2048-byte FIFO absorbs the extra latency.
  *
  * Returns 0 on success, -ETIMEDOUT if DREQ stayed low for
  * VS_DREQ_TIMEOUT_MS (likely a hardware fault).
@@ -116,7 +115,7 @@ static int vs_wait_dreq(void)
             LOG_ERR("DREQ timeout — check wiring/power");
             return -ETIMEDOUT;
         }
-        k_yield();
+        k_msleep(1);
     }
     return 0;
 }
@@ -271,6 +270,47 @@ int vs1053b_sine_test(bool enable)
         ret = vs_write_reg(VS_REG_MODE, VS_SM_SDINEW);
     }
     return ret;
+}
+
+int vs1053b_end_playback(void)
+{
+    uint16_t mode;
+    int ret = vs_read_reg(VS_REG_MODE, &mode);
+    if (ret) {
+        return ret;
+    }
+
+    ret = vs_write_reg(VS_REG_MODE, mode | VS_SM_CANCEL);
+    if (ret) {
+        return ret;
+    }
+
+    /* Send 32 bytes of zeros (endFillByte is 0 for most codecs)
+     * repeatedly until SM_CANCEL clears, meaning the codec has
+     * finished flushing its internal buffers. */
+    uint8_t zeros[VS1053B_DATA_CHUNK] = {0};
+    for (int i = 0; i < 64; i++) {
+        ret = vs1053b_write_data(zeros, sizeof(zeros));
+        if (ret) {
+            break;
+        }
+
+        ret = vs_read_reg(VS_REG_MODE, &mode);
+        if (ret) {
+            break;
+        }
+        if (!(mode & VS_SM_CANCEL)) {
+            return 0;
+        }
+    }
+
+    /* SM_CANCEL didn't clear — do a hard soft-reset as fallback */
+    ret = vs_write_reg(VS_REG_MODE, VS_SM_SDINEW | VS_SM_RESET);
+    if (ret) {
+        return ret;
+    }
+    k_msleep(5);
+    return vs_wait_dreq();
 }
 
 int vs1053b_init(const struct device *spi_dev)

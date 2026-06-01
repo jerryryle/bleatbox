@@ -4,7 +4,7 @@
 #include <stdint.h>
 
 /**
- * Scan the SD card for numbered .flac files and record the count.
+ * Scan the SD card for numbered .mp3 files and record the count.
  *
  * @return 0 on success, negative errno on directory-open failure.
  */

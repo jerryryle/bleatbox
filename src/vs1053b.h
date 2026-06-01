@@ -58,6 +58,17 @@ int vs1053b_write_reg(uint8_t reg, uint16_t val);
  */
 int vs1053b_sine_test(bool enable);
 
+/**
+ * Finish playback and reset the codec for the next file.
+ *
+ * Must be called after the last audio data is sent.  Sends endFillByte
+ * padding, then performs a soft reset so the decoder is ready to accept
+ * a new stream.
+ *
+ * @return 0 on success, negative errno on failure.
+ */
+int vs1053b_end_playback(void);
+
 /** Size of one SDI data chunk (bytes). */
 #define VS1053B_DATA_CHUNK 32
 
