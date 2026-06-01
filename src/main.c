@@ -67,18 +67,19 @@ static void handle_vibration(void)
         return;
     }
 
-    LOG_INF("Vibration detected — playing sound %u, broadcasting assignments",
-            VIBRATION_SOUND_INDEX);
-
-    static struct assignment assignments[DEVICE_CONFIG_MAX_PEERS];
-    int n = assignments_generate(assignments);
-    if (n <= 0) {
-        LOG_ERR("Assignment generation failed: %d", n);
-        return;
-    }
-
+    LOG_INF("Vibration detected — playing sound %u", VIBRATION_SOUND_INDEX);
     audio_play_sound(VIBRATION_SOUND_INDEX);
-    ble_advertise_assignments(assignments, n);
+
+    const struct assignment *assignments;
+    int n = assignments_generate(&assignments);
+    if (n < 0) {
+        LOG_ERR("Assignment generation failed: %d", n);
+    } else if (n > 0) {
+        LOG_INF("Broadcasting %d assignments", n);
+        ble_advertise_assignments(assignments, n);
+    } else {
+        LOG_WRN("No assignments generated — check config and sound count");
+    }
 }
 
 static void handle_ble_rx(const struct event *evt)
@@ -138,7 +139,12 @@ int main(void)
     // }
 
     /* --- Sound discovery --- */
-    sounds_scan();
+    ret = sounds_scan();
+    if (ret) {
+        LOG_ERR("Sound scan failed — shell still available over USB");
+        k_sleep(K_FOREVER);
+        return 0;
+    }
 
     /* --- Device configuration --- */
     struct device_config cfg;

@@ -30,9 +30,10 @@ void assignments_init(const uint8_t *peer_ids, uint8_t num_peers,
 /**
  * Generate random sound and delay assignments for the configured peers.
  *
- * @param out  Output array (must have room for at least num_peers entries).
+ * @param[out] out  Set to point to the internal assignment array.
+ *                  Valid until the next call to assignments_generate().
  * @return     Number of assignments generated, or negative errno on error.
  */
-int assignments_generate(struct assignment *out);
+int assignments_generate(const struct assignment **out);
 
 #endif /* ASSIGNMENTS_H_ */
