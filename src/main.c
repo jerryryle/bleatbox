@@ -89,6 +89,11 @@ static void handle_ble_rx(const struct event *evt)
         return;
     }
 
+    if (evt->sound >= sounds_get_count()) {
+        LOG_WRN("BLE RX dropped — invalid sound index %u", evt->sound);
+        return;
+    }
+
     LOG_INF("BLE RX assignment: sound=%u delay=%u ms",
             evt->sound, evt->delay_ms);
 
