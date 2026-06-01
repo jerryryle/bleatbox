@@ -141,7 +141,7 @@ static void audio_thread_entry(void *p1, void *p2, void *p3)
         uint8_t sound_index = g_pending_sound;
 
         char path[32];
-        snprintf(path, sizeof(path), SDCARD_MOUNT_POINT "/%02u.flac",
+        snprintf(path, sizeof(path), SDCARD_MOUNT_POINT "/%02u.mp3",
                  sound_index);
 
         struct fs_file_t f;
@@ -166,6 +166,7 @@ static void audio_thread_entry(void *p1, void *p2, void *p3)
         }
 
         fs_close(&f);
+        vs1053b_end_playback();
         g_playing = false;
         LOG_INF("Playback finished");
     }

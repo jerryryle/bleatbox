@@ -46,9 +46,37 @@ static struct k_msgq *g_evt_q;
 #define MFG_DATA_MAX_SIZE (HEADER_SIZE + BLE_MAX_ASSIGNMENTS * ASSIGNMENT_ENTRY_SIZE)
 static uint8_t g_mfg_data[MFG_DATA_MAX_SIZE];
 
+/*
+ * Scan parameters — continuous scanning (window == interval) for
+ * lowest detection latency.  Defined here so ble_advertise_assignments
+ * can restart scanning after the advertising burst.
+ */
+#define SCAN_INTERVAL 0x0030
+#define SCAN_WINDOW 0x0030
+
+static const struct bt_le_scan_param g_scan_params = {
+    .type = BT_LE_SCAN_TYPE_PASSIVE,
+    .options = BT_LE_SCAN_OPT_NONE,
+    .interval = SCAN_INTERVAL,
+    .window = SCAN_WINDOW,
+};
+
 /* ------------------------------------------------------------------ */
 /* Advertising (transmit)                                             */
 /* ------------------------------------------------------------------ */
+
+static void adv_sent_cb(struct bt_le_ext_adv *adv,
+                         struct bt_le_ext_adv_sent_info *info)
+{
+    ARG_UNUSED(adv);
+    LOG_INF("BLE advertising done (%u events), resuming scan",
+            info->num_sent);
+    bt_le_scan_start(&g_scan_params, NULL);
+}
+
+static const struct bt_le_ext_adv_cb g_adv_cbs = {
+    .sent = adv_sent_cb,
+};
 
 int ble_advertise_assignments(const struct assignment *assignments,
                               uint8_t count)
@@ -86,10 +114,13 @@ int ble_advertise_assignments(const struct assignment *assignments,
     }
 
     /*
-         * Send 5 advertising events.  With the 20-30 ms advertising
-         * interval configured below, that spans ~100-150 ms total.
-         * Timeout of 200 ms gives margin for scheduling jitter.
-         */
+     * Stop scanning while advertising to avoid a timing conflict
+     * in the Zephyr BLE controller's ticker when extended
+     * advertising and continuous scanning run concurrently.
+     */
+    LOG_INF("Stopping BLE scan to start advertising");
+    bt_le_scan_stop();
+
     struct bt_le_ext_adv_start_param start = {
         .timeout = 20, /* 20 x 10 ms = 200 ms */
         .num_events = 5,
@@ -98,6 +129,7 @@ int ble_advertise_assignments(const struct assignment *assignments,
     ret = bt_le_ext_adv_start(g_adv_set, &start);
     if (ret) {
         LOG_ERR("Failed to start adv: %d", ret);
+        bt_le_scan_start(&g_scan_params, NULL);
         return ret;
     }
 
@@ -187,37 +219,7 @@ static struct bt_le_scan_cb g_scan_cbs = {
     .recv = scan_recv_cb,
 };
 
-/*
- * Scan parameters — power/latency tradeoff:
- *
- * The 50 ms end-to-end latency budget covers:
- *   (1) Time until the scanner's window overlaps the advertisement
- *   (2) Packet reception and callback dispatch (~1 ms)
- *   (3) SPI command to VS1053B to begin playback (~2 ms)
- *
- * Continuous scanning (window == interval) guarantees that any
- * advertisement is detected immediately, making (1) ~ 0 and leaving
- * ~47 ms of headroom for (2) and (3).
- *
- * Cost: ~5-7 mA continuous radio current.  A duty-cycled alternative
- * (e.g. window=30ms / interval=50ms, 60% duty) would save ~40% radio
- * power but risk 20 ms worst-case detection latency, eating into the
- * 50 ms budget.  Since vibration events are rare and the CPU still
- * enters System ON idle between scan events, continuous scanning is
- * the right tradeoff here.
- *
- * 48 units x 0.625 ms = 30 ms, matching the minimum extended
- * advertising interval.  Window == interval == 30 ms = continuous.
- */
-#define SCAN_INTERVAL 0x0030
-#define SCAN_WINDOW 0x0030
-
-static const struct bt_le_scan_param g_scan_params = {
-    .type = BT_LE_SCAN_TYPE_PASSIVE,
-    .options = BT_LE_SCAN_OPT_NONE,
-    .interval = SCAN_INTERVAL,
-    .window = SCAN_WINDOW,
-};
+/* (scan parameters moved above ble_advertise_assignments) */
 
 /* ------------------------------------------------------------------ */
 /* Initialization                                                     */
@@ -248,7 +250,7 @@ int ble_init(uint8_t device_id, struct k_msgq *event_q)
                              0x0030, /* 48 x 0.625 ms = 30 ms */
                              NULL);
 
-    ret = bt_le_ext_adv_create(&adv_params, NULL, &g_adv_set);
+    ret = bt_le_ext_adv_create(&adv_params, &g_adv_cbs, &g_adv_set);
     if (ret) {
         LOG_ERR("Failed to create extended adv set: %d", ret);
         return ret;

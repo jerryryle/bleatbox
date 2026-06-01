@@ -15,6 +15,9 @@
 LOG_MODULE_REGISTER(accel, LOG_LEVEL_INF);
 
 #define LIS2DH_REG_CTRL1 0x20
+#define LIS2DH_REG_CTRL2 0x21
+#define LIS2DH_REG_REFERENCE 0x26
+#define LIS2DH_HPIS1 BIT(0)
 #define LIS2DH_ODR_100HZ_LP 0x57 /* ODR=100Hz, low-power, XYZ enabled */
 
 static const struct device *g_accel_dev =
@@ -73,6 +76,28 @@ int accel_init(struct k_msgq *event_q, uint16_t threshold_mg)
     ret = sensor_trigger_set(g_accel_dev, &trig, accel_trigger_handler);
     if (ret) {
         LOG_ERR("Failed to set trigger: %d", ret);
+        return ret;
+    }
+
+    /*
+     * The Zephyr LIS2DH driver doesn't enable the high-pass filter
+     * for the interrupt source.  Without it, the threshold is compared
+     * against raw acceleration (including gravity), so a 200 mg
+     * threshold fires constantly from the ~1 g Z-axis reading.
+     * Enable HPIS1 so the interrupt sees only changes in acceleration.
+     */
+    ret = i2c_reg_write_byte_dt(&g_i2c_spec, LIS2DH_REG_CTRL2, LIS2DH_HPIS1);
+    if (ret) {
+        LOG_ERR("Failed to enable HP filter for INT1: %d", ret);
+        return ret;
+    }
+
+    /* Reading REFERENCE resets the HP filter, setting the current
+     * acceleration (including gravity) as the baseline. */
+    uint8_t dummy;
+    ret = i2c_reg_read_byte_dt(&g_i2c_spec, LIS2DH_REG_REFERENCE, &dummy);
+    if (ret) {
+        LOG_ERR("Failed to read reference register: %d", ret);
         return ret;
     }
 

@@ -70,7 +70,7 @@ static void handle_vibration(void)
     LOG_INF("Vibration detected — playing sound %u, broadcasting assignments",
             VIBRATION_SOUND_INDEX);
 
-    struct assignment assignments[DEVICE_CONFIG_MAX_PEERS];
+    static struct assignment assignments[DEVICE_CONFIG_MAX_PEERS];
     int n = assignments_generate(assignments);
     if (n <= 0) {
         LOG_ERR("Assignment generation failed: %d", n);
@@ -132,10 +132,10 @@ int main(void)
     }
 
     /* --- VS1053B patches (must precede playback) --- */
-    ret = audio_apply_patch(SDCARD_MOUNT_POINT "/flaclatm.bin");
-    if (ret) {
-        LOG_WRN("No codec patches loaded (%d) — playback may be limited", ret);
-    }
+    // ret = audio_apply_patch(SDCARD_MOUNT_POINT "/flaclatm.bin");
+    // if (ret) {
+    //     LOG_WRN("No codec patches loaded (%d) — playback may be limited", ret);
+    // }
 
     /* --- Sound discovery --- */
     sounds_scan();
