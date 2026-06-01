@@ -200,6 +200,11 @@ int device_config_load(struct device_config *cfg)
         LOG_ERR("Config file missing 'peers'");
         return -EINVAL;
     }
+    if (cfg->delay_min_ms > cfg->delay_max_ms) {
+        LOG_ERR("delay_min (%u) must not exceed delay_max (%u)",
+                cfg->delay_min_ms, cfg->delay_max_ms);
+        return -EINVAL;
+    }
 
     LOG_INF("Device ID: 0x%02x", cfg->id);
     LOG_HEXDUMP_INF(cfg->peers, cfg->peer_count, "Peers:");

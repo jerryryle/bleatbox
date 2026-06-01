@@ -27,6 +27,7 @@ int sounds_scan(void)
         return ret;
     }
 
+    bool present[100] = {false};
     int max_index = -1;
 
     while (fs_readdir(&dir, &entry) == 0 && entry.name[0] != '\0') {
@@ -62,6 +63,7 @@ int sounds_scan(void)
             continue;
         }
 
+        present[idx] = true;
         if (idx > max_index) {
             max_index = idx;
         }
@@ -73,6 +75,16 @@ int sounds_scan(void)
         LOG_WRN("No .mp3 files found on SD card");
         g_sound_count = 0;
     } else {
+        bool has_gap = false;
+        for (int i = 0; i <= max_index; i++) {
+            if (!present[i]) {
+                LOG_ERR("Missing sound file: %02u.mp3", i);
+                has_gap = true;
+            }
+        }
+        if (has_gap) {
+            return -ENOENT;
+        }
         g_sound_count = (uint8_t)(max_index + 1);
         LOG_INF("Found sounds 00-%02u (%u total)", max_index,
                 g_sound_count);
