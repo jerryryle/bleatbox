@@ -190,7 +190,8 @@ int ble_advertise_assignments(const struct assignment *assignments,
         int offset = HEADER_SIZE + i * ASSIGNMENT_ENTRY_SIZE;
 
         g_mfg_data[offset + 0] = assignments[i].device_id;
-        g_mfg_data[offset + 1] = assignments[i].sound;
+        g_mfg_data[offset + 1] = ble_sound_encode(SOUND_TYPE_GOAT,
+                                                     assignments[i].sound);
         sys_put_le16(assignments[i].delay_ms, &g_mfg_data[offset + 2]);
     }
 
@@ -215,6 +216,12 @@ int ble_advertise_assignments(const struct assignment *assignments,
 
 static void relay_packet(const uint8_t *data, uint8_t data_len, uint8_t ttl)
 {
+    if (data_len > MFG_DATA_MAX_SIZE) {
+        LOG_WRN("Relay skipped — packet too large (%u > %u)",
+                data_len, MFG_DATA_MAX_SIZE);
+        return;
+    }
+
     if (g_adv_active) {
         LOG_DBG("Relay skipped — advertising already active");
         return;
