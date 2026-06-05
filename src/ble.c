@@ -233,6 +233,50 @@ static void relay_packet(const uint8_t *data, uint8_t data_len, uint8_t ttl)
             g_mfg_data[HDR_OFF_ORIGINATOR], g_mfg_data[HDR_OFF_SEQ], ttl);
 }
 
+static void handle_mfg_data(const uint8_t *data, uint8_t data_len)
+{
+    if (data[HDR_OFF_COMPANY_LO] != COMPANY_ID_LO ||
+        data[HDR_OFF_COMPANY_HI] != COMPANY_ID_HI ||
+        data[HDR_OFF_MAGIC] != MAGIC_BYTE) {
+        return;
+    }
+
+    uint8_t originator = data[HDR_OFF_ORIGINATOR];
+    uint8_t seq = data[HDR_OFF_SEQ];
+    uint8_t ttl = data[HDR_OFF_TTL];
+
+    if (seen_check(originator, seq)) {
+        LOG_DBG("Duplicate dropped: originator=0x%02x seq=%u",
+                originator, seq);
+        return;
+    }
+    seen_record(originator, seq);
+
+    int num_entries = (data_len - HEADER_SIZE) / ASSIGNMENT_ENTRY_SIZE;
+    for (int i = 0; i < num_entries; i++) {
+        int off = HEADER_SIZE + i * ASSIGNMENT_ENTRY_SIZE;
+        if (data[off] != g_local_device_id) {
+            continue;
+        }
+
+        uint8_t sound = data[off + 1];
+        uint16_t delay = sys_get_le16(&data[off + 2]);
+
+        struct event evt = {
+            .type = EVENT_BLE_RX,
+            .sound = sound,
+            .delay_ms = delay,
+        };
+
+        k_msgq_put(g_evt_q, &evt, K_NO_WAIT);
+        break;
+    }
+
+    if (ttl > 0) {
+        relay_packet(data, data_len, ttl - 1);
+    }
+}
+
 static void scan_recv_cb(const struct bt_le_scan_recv_info *info,
                          struct net_buf_simple *buf)
 {
@@ -252,7 +296,6 @@ static void scan_recv_cb(const struct bt_le_scan_recv_info *info,
         uint8_t ad_type = net_buf_simple_pull_u8(buf);
         uint8_t data_len = ad_len - 1;
 
-        /* Must be manufacturer data with valid structure */
         if (ad_type != BT_DATA_MANUFACTURER_DATA ||
             data_len < HEADER_SIZE ||
             (data_len - HEADER_SIZE) % ASSIGNMENT_ENTRY_SIZE != 0) {
@@ -262,57 +305,10 @@ static void scan_recv_cb(const struct bt_le_scan_recv_info *info,
             continue;
         }
 
-        const uint8_t *data = buf->data;
-
-        if (data[HDR_OFF_COMPANY_LO] != COMPANY_ID_LO ||
-            data[HDR_OFF_COMPANY_HI] != COMPANY_ID_HI ||
-            data[HDR_OFF_MAGIC] != MAGIC_BYTE) {
-            net_buf_simple_pull(buf, data_len);
-            continue;
-        }
-
-        uint8_t originator = data[HDR_OFF_ORIGINATOR];
-        uint8_t seq = data[HDR_OFF_SEQ];
-        uint8_t ttl = data[HDR_OFF_TTL];
-
-        /* Dedup: drop if we've already seen this (originator, seq) */
-        if (seen_check(originator, seq)) {
-            LOG_DBG("Duplicate dropped: originator=0x%02x seq=%u",
-                    originator, seq);
-            goto done;
-        }
-        seen_record(originator, seq);
-
-        /* Find our entry in the assignment list */
-        int num_entries = (data_len - HEADER_SIZE) / ASSIGNMENT_ENTRY_SIZE;
-        for (int i = 0; i < num_entries; i++) {
-            int off = HEADER_SIZE + i * ASSIGNMENT_ENTRY_SIZE;
-            if (data[off] != g_local_device_id) {
-                continue;
-            }
-
-            uint8_t sound = data[off + 1];
-            uint16_t delay = sys_get_le16(&data[off + 2]);
-
-            struct event evt = {
-                .type = EVENT_BLE_RX,
-                .sound = sound,
-                .delay_ms = delay,
-            };
-
-            k_msgq_put(g_evt_q, &evt, K_NO_WAIT);
-            break;
-        }
-
-        /* Relay if TTL allows */
-        if (ttl > 0) {
-            relay_packet(data, data_len, ttl - 1);
-        }
-
-        goto done;
+        handle_mfg_data(buf->data, data_len);
+        break;
     }
 
-done:
     net_buf_simple_restore(buf, &state);
 }
 
