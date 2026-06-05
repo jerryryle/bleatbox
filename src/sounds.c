@@ -14,7 +14,72 @@
 
 LOG_MODULE_REGISTER(sounds, LOG_LEVEL_INF);
 
-static uint8_t g_sound_count;
+static uint8_t g_goat_count;
+static uint8_t g_misc_count;
+
+struct sound_prefix {
+    const char *name;
+    size_t len;
+    bool *present;
+    int max_index;
+};
+
+/*
+ * Try to match a filename against a prefix and extract the numeric
+ * index.  Returns the index on success, -1 on no match.
+ */
+static int try_match(const char *filename, const char *dot,
+                     const char *prefix, size_t prefix_len)
+{
+    if (strncmp(filename, prefix, prefix_len) != 0) {
+        return -1;
+    }
+
+    const char *num_start = filename + prefix_len;
+    size_t num_len = dot - num_start;
+    if (num_len == 0 || num_len > 2) {
+        return -1;
+    }
+
+    for (size_t i = 0; i < num_len; i++) {
+        if (num_start[i] < '0' || num_start[i] > '9') {
+            return -1;
+        }
+    }
+
+    char num_str[3] = {0};
+    memcpy(num_str, num_start, num_len);
+    int idx = (int)strtoul(num_str, NULL, 10);
+    if (idx > 99) {
+        return -1;
+    }
+
+    return idx;
+}
+
+static uint8_t validate_set(const char *name, bool *present, int max_index)
+{
+    if (max_index < 0) {
+        return 0;
+    }
+
+    bool has_gap = false;
+    for (int i = 0; i <= max_index; i++) {
+        if (!present[i]) {
+            LOG_ERR("Missing sound file: %s%02u.mp3", name, i);
+            has_gap = true;
+        }
+    }
+
+    if (has_gap) {
+        return 0;
+    }
+
+    uint8_t count = (uint8_t)(max_index + 1);
+    LOG_INF("Found sounds %s00-%s%02u (%u total)", name, name,
+            max_index, count);
+    return count;
+}
 
 int sounds_scan(void)
 {
@@ -28,9 +93,13 @@ int sounds_scan(void)
         return ret;
     }
 
-    bool present[100] = {false};
-    int max_index = -1;
-    g_sound_count = 0;
+    bool goat_present[100] = {false};
+    bool misc_present[100] = {false};
+    int goat_max = -1;
+    int misc_max = -1;
+
+    g_goat_count = 0;
+    g_misc_count = 0;
 
     while (fs_readdir(&dir, &entry) == 0 && entry.name[0] != '\0') {
         if (entry.type != FS_DIR_ENTRY_FILE) {
@@ -42,77 +111,72 @@ int sounds_scan(void)
             continue;
         }
 
-        static const char prefix[] = "goat";
-        if (strncmp(entry.name, prefix, sizeof(prefix) - 1) != 0) {
-            continue;
-        }
+        int idx;
 
-        const char *num_start = entry.name + sizeof(prefix) - 1;
-        size_t num_len = dot - num_start;
-        if (num_len == 0 || num_len > 2) {
-            continue;
-        }
-
-        bool digits = true;
-        for (size_t i = 0; i < num_len; i++) {
-            if (num_start[i] < '0' || num_start[i] > '9') {
-                digits = false;
-                break;
+        idx = try_match(entry.name, dot, "goat", 4);
+        if (idx >= 0) {
+            goat_present[idx] = true;
+            if (idx > goat_max) {
+                goat_max = idx;
             }
-        }
-        if (!digits) {
             continue;
         }
 
-        char num_str[3] = {0};
-        memcpy(num_str, num_start, num_len);
-        int idx = (int)strtoul(num_str, NULL, 10);
-        if (idx > 99) {
-            continue;
-        }
-
-        present[idx] = true;
-        if (idx > max_index) {
-            max_index = idx;
+        idx = try_match(entry.name, dot, "misc", 4);
+        if (idx >= 0) {
+            misc_present[idx] = true;
+            if (idx > misc_max) {
+                misc_max = idx;
+            }
         }
     }
 
     fs_closedir(&dir);
 
-    if (max_index < 0) {
-        LOG_ERR("No .mp3 files found on SD card");
+    g_goat_count = validate_set("goat", goat_present, goat_max);
+    if (g_goat_count == 0) {
+        LOG_ERR("No goat sounds found on SD card");
         return -ENOENT;
-    } else {
-        bool has_gap = false;
-        for (int i = 0; i <= max_index; i++) {
-            if (!present[i]) {
-                LOG_ERR("Missing sound file: goat%02u.mp3", i);
-                has_gap = true;
-            }
-        }
-        if (has_gap) {
-            return -ENOENT;
-        }
-        g_sound_count = (uint8_t)(max_index + 1);
-        LOG_INF("Found sounds goat00-goat%02u (%u total)", max_index,
-                g_sound_count);
     }
+
+    g_misc_count = validate_set("misc", misc_present, misc_max);
 
     return 0;
 }
 
-uint8_t sounds_get_count(void)
+uint8_t sounds_get_count(enum sound_type type)
 {
-    return g_sound_count;
+    switch (type) {
+    case SOUND_TYPE_GOAT:
+        return g_goat_count;
+    case SOUND_TYPE_MISC:
+        return g_misc_count;
+    default:
+        return 0;
+    }
 }
 
-int sounds_get_path(uint8_t index, char *buf, size_t len)
+static const char *type_prefix(enum sound_type type)
 {
-    if (index >= g_sound_count) {
+    switch (type) {
+    case SOUND_TYPE_GOAT:
+        return "goat";
+    case SOUND_TYPE_MISC:
+        return "misc";
+    default:
+        return "";
+    }
+}
+
+int sounds_get_path(enum sound_type type, uint8_t index,
+                    char *buf, size_t len)
+{
+    if (index >= sounds_get_count(type)) {
         return -EINVAL;
     }
 
-    int need = snprintf(buf, len, SDCARD_MOUNT_POINT "/goat%02u.mp3", index);
+    int need = snprintf(buf, len, SDCARD_MOUNT_POINT "/%s%02u.mp3",
+                        type_prefix(type), index);
     if (need < 0 || (size_t)need >= len) {
         return -ENOSPC;
     }

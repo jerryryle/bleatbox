@@ -68,7 +68,8 @@ static void handle_vibration(void)
     }
 
     char path[32];
-    int ret = sounds_get_path(VIBRATION_SOUND_INDEX, path, sizeof(path));
+    int ret = sounds_get_path(SOUND_TYPE_GOAT, VIBRATION_SOUND_INDEX,
+                              path, sizeof(path));
     if (ret) {
         LOG_ERR("Cannot resolve sound %u: %d", VIBRATION_SOUND_INDEX, ret);
         return;
@@ -96,14 +97,17 @@ static void handle_ble_rx(const struct event *evt)
         return;
     }
 
+    enum sound_type type = ble_sound_decode_type(evt->sound);
+    uint8_t index = ble_sound_decode_index(evt->sound);
+
     char path[32];
-    int ret = sounds_get_path(evt->sound, path, sizeof(path));
+    int ret = sounds_get_path(type, index, path, sizeof(path));
     if (ret) {
-        LOG_WRN("BLE RX dropped — invalid sound index %u", evt->sound);
+        LOG_WRN("BLE RX dropped — invalid sound 0x%02x", evt->sound);
         return;
     }
 
-    LOG_INF("BLE RX assignment: sound=%u delay=%u ms",
+    LOG_INF("BLE RX assignment: sound=0x%02x delay=%u ms",
             evt->sound, evt->delay_ms);
 
     if (evt->delay_ms > 0) {
@@ -175,7 +179,7 @@ int main(void)
     /* --- Assignment config --- */
     assignments_init(cfg.peers, cfg.peer_count,
                      cfg.delay_min_ms, cfg.delay_max_ms,
-                     sounds_get_count());
+                     sounds_get_count(SOUND_TYPE_GOAT));
 
     /* --- Accelerometer (any-motion interrupt) --- */
     ret = accel_init(&event_q, cfg.accel_threshold_mg);

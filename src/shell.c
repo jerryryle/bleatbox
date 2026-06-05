@@ -7,6 +7,7 @@
 
 #include <zephyr/shell/shell.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include "accel.h"
 #include "audio.h"
@@ -16,14 +17,25 @@
 
 static int cmd_play(const struct shell *sh, size_t argc, char **argv)
 {
-    unsigned long idx = strtoul(argv[1], NULL, 0);
+    enum sound_type type;
+    if (!strcmp(argv[1], "goat")) {
+        type = SOUND_TYPE_GOAT;
+    } else if (!strcmp(argv[1], "misc")) {
+        type = SOUND_TYPE_MISC;
+    } else {
+        shell_error(sh, "Unknown sound type '%s' (use goat or misc)",
+                    argv[1]);
+        return -EINVAL;
+    }
+
+    unsigned long idx = strtoul(argv[2], NULL, 0);
 
     char path[32];
-    int ret = sounds_get_path((uint8_t)idx, path, sizeof(path));
+    int ret = sounds_get_path(type, (uint8_t)idx, path, sizeof(path));
     if (ret) {
-        uint8_t count = sounds_get_count();
-        shell_error(sh, "Sound index must be 0-%u (%u available)",
-                    count ? count - 1 : 0, count);
+        uint8_t count = sounds_get_count(type);
+        shell_error(sh, "Index must be 0-%u (%u %s sounds available)",
+                    count ? count - 1 : 0, count, argv[1]);
         return -EINVAL;
     }
 
@@ -37,7 +49,7 @@ static int cmd_play(const struct shell *sh, size_t argc, char **argv)
         return 0;
     }
 
-    shell_print(sh, "Playing sound %lu", idx);
+    shell_print(sh, "Playing %s %lu", argv[1], idx);
     audio_play_sound(path);
     return 0;
 }
@@ -88,8 +100,8 @@ static int cmd_sinetest(const struct shell *sh, size_t argc, char **argv)
 }
 
 SHELL_CMD_ARG_REGISTER(play, NULL,
-                       "Play a sound: play <index>",
-                       cmd_play, 2, 0);
+                       "Play a sound: play goat|misc <index>",
+                       cmd_play, 3, 0);
 
 SHELL_CMD_ARG_REGISTER(sinetest, NULL,
                        "VS1053B sine test: sinetest on|off",
