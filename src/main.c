@@ -76,7 +76,7 @@ static void handle_vibration(void)
     }
 
     LOG_INF("Vibration detected — playing %s", path);
-    audio_play_sound(path);
+    audio_play_sound(path, 0);
 
     const struct assignment *assignments;
     int n = assignments_generate(&assignments);
@@ -110,11 +110,7 @@ static void handle_ble_rx(const struct event *evt)
     LOG_INF("BLE RX assignment: sound=0x%02x delay=%u ms",
             evt->sound, evt->delay_ms);
 
-    if (evt->delay_ms > 0) {
-        k_msleep(evt->delay_ms);
-    }
-
-    audio_play_sound(path);
+    audio_play_sound(path, evt->delay_ms);
 }
 
 /* ------------------------------------------------------------------ */

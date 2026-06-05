@@ -50,7 +50,7 @@ static int cmd_play(const struct shell *sh, size_t argc, char **argv)
     }
 
     shell_print(sh, "Playing %s %lu", argv[1], idx);
-    audio_play_sound(path);
+    audio_play_sound(path, 0);
     return 0;
 }
 

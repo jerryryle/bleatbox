@@ -131,9 +131,10 @@ static volatile bool g_playing;
 
 #define SOUND_PATH_MAX 32
 static char g_pending_path[SOUND_PATH_MAX];
+static uint16_t g_pending_delay;
 static K_SEM_DEFINE(g_play_sem, 0, 1);
 
-static void audio_thread(void *p1, void *p2, void *p3)
+static void playback_thread(void *p1, void *p2, void *p3)
 {
     ARG_UNUSED(p1);
     ARG_UNUSED(p2);
@@ -141,6 +142,10 @@ static void audio_thread(void *p1, void *p2, void *p3)
 
     for (;;) {
         k_sem_take(&g_play_sem, K_FOREVER);
+
+        if (g_pending_delay > 0) {
+            k_msleep(g_pending_delay);
+        }
 
         struct fs_file_t f;
         fs_file_t_init(&f);
@@ -174,7 +179,7 @@ static void audio_thread(void *p1, void *p2, void *p3)
 #define AUDIO_PRIORITY 5
 
 K_THREAD_DEFINE(audio_tid, AUDIO_STACK_SIZE,
-                audio_thread, NULL, NULL, NULL,
+                playback_thread, NULL, NULL, NULL,
                 AUDIO_PRIORITY, 0, 0);
 
 /* ------------------------------------------------------------------ */
@@ -186,7 +191,7 @@ bool audio_is_playing(void)
     return g_playing;
 }
 
-void audio_play_sound(const char *path)
+void audio_play_sound(const char *path, uint16_t delay_ms)
 {
     if (g_playing) {
         LOG_WRN("audio_play_sound called while already playing — ignored");
@@ -195,6 +200,7 @@ void audio_play_sound(const char *path)
 
     strncpy(g_pending_path, path, sizeof(g_pending_path) - 1);
     g_pending_path[sizeof(g_pending_path) - 1] = '\0';
+    g_pending_delay = delay_ms;
     g_playing = true;
     k_sem_give(&g_play_sem);
 }
