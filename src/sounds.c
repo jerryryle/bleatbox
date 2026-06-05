@@ -5,6 +5,7 @@
 #include <zephyr/fs/fs.h>
 #include <zephyr/logging/log.h>
 
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -41,14 +42,20 @@ int sounds_scan(void)
             continue;
         }
 
-        size_t num_len = dot - entry.name;
+        static const char prefix[] = "goat";
+        if (strncmp(entry.name, prefix, sizeof(prefix) - 1) != 0) {
+            continue;
+        }
+
+        const char *num_start = entry.name + sizeof(prefix) - 1;
+        size_t num_len = dot - num_start;
         if (num_len == 0 || num_len > 2) {
             continue;
         }
 
         bool digits = true;
         for (size_t i = 0; i < num_len; i++) {
-            if (entry.name[i] < '0' || entry.name[i] > '9') {
+            if (num_start[i] < '0' || num_start[i] > '9') {
                 digits = false;
                 break;
             }
@@ -58,7 +65,7 @@ int sounds_scan(void)
         }
 
         char num_str[3] = {0};
-        memcpy(num_str, entry.name, num_len);
+        memcpy(num_str, num_start, num_len);
         int idx = (int)strtoul(num_str, NULL, 10);
         if (idx > 99) {
             continue;
@@ -79,7 +86,7 @@ int sounds_scan(void)
         bool has_gap = false;
         for (int i = 0; i <= max_index; i++) {
             if (!present[i]) {
-                LOG_ERR("Missing sound file: %02u.mp3", i);
+                LOG_ERR("Missing sound file: goat%02u.mp3", i);
                 has_gap = true;
             }
         }
@@ -87,7 +94,7 @@ int sounds_scan(void)
             return -ENOENT;
         }
         g_sound_count = (uint8_t)(max_index + 1);
-        LOG_INF("Found sounds 00-%02u (%u total)", max_index,
+        LOG_INF("Found sounds goat00-goat%02u (%u total)", max_index,
                 g_sound_count);
     }
 
@@ -97,4 +104,18 @@ int sounds_scan(void)
 uint8_t sounds_get_count(void)
 {
     return g_sound_count;
+}
+
+int sounds_get_path(uint8_t index, char *buf, size_t len)
+{
+    if (index >= g_sound_count) {
+        return -EINVAL;
+    }
+
+    int need = snprintf(buf, len, SDCARD_MOUNT_POINT "/goat%02u.mp3", index);
+    if (need < 0 || (size_t)need >= len) {
+        return -ENOSPC;
+    }
+
+    return 0;
 }

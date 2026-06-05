@@ -18,8 +18,10 @@ static int cmd_play(const struct shell *sh, size_t argc, char **argv)
 {
     unsigned long idx = strtoul(argv[1], NULL, 0);
 
-    uint8_t count = sounds_get_count();
-    if (!count || idx >= count) {
+    char path[32];
+    int ret = sounds_get_path((uint8_t)idx, path, sizeof(path));
+    if (ret) {
+        uint8_t count = sounds_get_count();
         shell_error(sh, "Sound index must be 0-%u (%u available)",
                     count ? count - 1 : 0, count);
         return -EINVAL;
@@ -36,7 +38,7 @@ static int cmd_play(const struct shell *sh, size_t argc, char **argv)
     }
 
     shell_print(sh, "Playing sound %lu", idx);
-    audio_play_sound((uint8_t)idx);
+    audio_play_sound(path);
     return 0;
 }
 

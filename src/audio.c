@@ -13,10 +13,9 @@
 #include <zephyr/fs/fs.h>
 #include <zephyr/logging/log.h>
 
-#include <stdio.h>
+#include <string.h>
 
 #include "audio.h"
-#include "sdcard.h"
 #include "vs1053b.h"
 
 LOG_MODULE_REGISTER(audio, LOG_LEVEL_INF);
@@ -59,6 +58,33 @@ static int read_u16(struct fs_file_t *f, uint16_t *val)
     return 0;
 }
 
+static int apply_patch_records(struct fs_file_t *f)
+{
+    uint8_t reg;
+
+    while (fs_read(f, &reg, 1) == 1) {
+        uint16_t count;
+        int ret = read_u16(f, &count);
+        if (ret) {
+            return ret;
+        }
+
+        for (uint16_t i = 0; i < count; i++) {
+            uint16_t val;
+            ret = read_u16(f, &val);
+            if (ret) {
+                return ret;
+            }
+            ret = vs1053b_write_reg(reg, val);
+            if (ret) {
+                return ret;
+            }
+        }
+    }
+
+    return 0;
+}
+
 int audio_apply_patch(const char *path)
 {
     struct fs_file_t f;
@@ -70,32 +96,9 @@ int audio_apply_patch(const char *path)
         return ret;
     }
 
-    /*
-         * Record format: [register: 1 byte] [count: 2 bytes BE]
-         *                [data: count * 2 bytes, each BE uint16_t]
-         */
-    uint8_t reg;
-    while (fs_read(&f, &reg, 1) == 1) {
-        uint16_t count;
-        if (read_u16(&f, &count)) {
-            ret = -EIO;
-            break;
-        }
-
-        for (uint16_t i = 0; i < count; i++) {
-            uint16_t val;
-            if (read_u16(&f, &val)) {
-                ret = -EIO;
-                goto out;
-            }
-            ret = vs1053b_write_reg(reg, val);
-            if (ret)
-                goto out;
-        }
-    }
-
-out:
+    ret = apply_patch_records(&f);
     fs_close(&f);
+
     if (ret) {
         LOG_ERR("Patch %s failed: %d", path, ret);
     } else {
@@ -126,10 +129,11 @@ int audio_set_volume(uint8_t percent)
  */
 static volatile bool g_playing;
 
-static uint8_t g_pending_sound;
+#define SOUND_PATH_MAX 32
+static char g_pending_path[SOUND_PATH_MAX];
 static K_SEM_DEFINE(g_play_sem, 0, 1);
 
-static void audio_thread_entry(void *p1, void *p2, void *p3)
+static void audio_thread(void *p1, void *p2, void *p3)
 {
     ARG_UNUSED(p1);
     ARG_UNUSED(p2);
@@ -138,22 +142,16 @@ static void audio_thread_entry(void *p1, void *p2, void *p3)
     for (;;) {
         k_sem_take(&g_play_sem, K_FOREVER);
 
-        uint8_t sound_index = g_pending_sound;
-
-        char path[32];
-        snprintf(path, sizeof(path), SDCARD_MOUNT_POINT "/%02u.mp3",
-                 sound_index);
-
         struct fs_file_t f;
         fs_file_t_init(&f);
-        int ret = fs_open(&f, path, FS_O_READ);
+        int ret = fs_open(&f, g_pending_path, FS_O_READ);
         if (ret < 0) {
-            LOG_ERR("Cannot open %s: %d", path, ret);
+            LOG_ERR("Cannot open %s: %d", g_pending_path, ret);
             g_playing = false;
             continue;
         }
 
-        LOG_INF("Playing %s", path);
+        LOG_INF("Playing %s", g_pending_path);
 
         uint8_t buf[VS1053B_DATA_CHUNK];
         ssize_t nread;
@@ -176,7 +174,7 @@ static void audio_thread_entry(void *p1, void *p2, void *p3)
 #define AUDIO_PRIORITY 5
 
 K_THREAD_DEFINE(audio_tid, AUDIO_STACK_SIZE,
-                audio_thread_entry, NULL, NULL, NULL,
+                audio_thread, NULL, NULL, NULL,
                 AUDIO_PRIORITY, 0, 0);
 
 /* ------------------------------------------------------------------ */
@@ -188,14 +186,15 @@ bool audio_is_playing(void)
     return g_playing;
 }
 
-void audio_play_sound(uint8_t sound_index)
+void audio_play_sound(const char *path)
 {
     if (g_playing) {
         LOG_WRN("audio_play_sound called while already playing — ignored");
         return;
     }
 
-    g_pending_sound = sound_index;
+    strncpy(g_pending_path, path, sizeof(g_pending_path) - 1);
+    g_pending_path[sizeof(g_pending_path) - 1] = '\0';
     g_playing = true;
     k_sem_give(&g_play_sem);
 }

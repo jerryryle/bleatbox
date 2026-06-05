@@ -49,9 +49,9 @@ int audio_set_volume(uint8_t percent);
  * Calling this while a sound is already playing is a no-op (the
  * call is logged and ignored).
  *
- * @param sound_index  File to play (maps to "/<index>.mp3").
+ * @param path  Filesystem path to the MP3 file.
  */
-void audio_play_sound(uint8_t sound_index);
+void audio_play_sound(const char *path);
 
 /**
  * Check whether a sound is currently playing.
