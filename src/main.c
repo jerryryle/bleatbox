@@ -67,8 +67,15 @@ static void handle_vibration(void)
         return;
     }
 
-    LOG_INF("Vibration detected — playing sound %u", VIBRATION_SOUND_INDEX);
-    audio_play_sound(VIBRATION_SOUND_INDEX);
+    char path[32];
+    int ret = sounds_get_path(VIBRATION_SOUND_INDEX, path, sizeof(path));
+    if (ret) {
+        LOG_ERR("Cannot resolve sound %u: %d", VIBRATION_SOUND_INDEX, ret);
+        return;
+    }
+
+    LOG_INF("Vibration detected — playing %s", path);
+    audio_play_sound(path);
 
     const struct assignment *assignments;
     int n = assignments_generate(&assignments);
@@ -89,7 +96,9 @@ static void handle_ble_rx(const struct event *evt)
         return;
     }
 
-    if (evt->sound >= sounds_get_count()) {
+    char path[32];
+    int ret = sounds_get_path(evt->sound, path, sizeof(path));
+    if (ret) {
         LOG_WRN("BLE RX dropped — invalid sound index %u", evt->sound);
         return;
     }
@@ -101,7 +110,7 @@ static void handle_ble_rx(const struct event *evt)
         k_msleep(evt->delay_ms);
     }
 
-    audio_play_sound(evt->sound);
+    audio_play_sound(path);
 }
 
 /* ------------------------------------------------------------------ */
