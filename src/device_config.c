@@ -149,6 +149,7 @@ int device_config_load(struct device_config *cfg)
 {
     *cfg = (struct device_config){
         .volume = 80,
+        .delay_min_ms = 0,
         .delay_max_ms = 2000,
         .accel_threshold_mg = 200,
         .relay_ttl = 2,

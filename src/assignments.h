@@ -21,11 +21,12 @@ struct assignment {
  * @param num_peers     Length of @p peer_ids.
  * @param delay_min_ms  Minimum random delay in milliseconds.
  * @param delay_max_ms  Maximum random delay in milliseconds.
+ * @param first_sound   Lowest sound index to assign (skips local-only sounds).
  * @param num_sounds    Number of available sounds.
  */
 void assignments_init(const uint8_t *peer_ids, uint8_t num_peers,
                       uint16_t delay_min_ms, uint16_t delay_max_ms,
-                      uint8_t num_sounds);
+                      uint8_t first_sound, uint8_t num_sounds);
 
 /**
  * Generate random sound and delay assignments for the configured peers.

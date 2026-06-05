@@ -179,6 +179,7 @@ int main(void)
     /* --- Assignment config --- */
     assignments_init(cfg.peers, cfg.peer_count,
                      cfg.delay_min_ms, cfg.delay_max_ms,
+                     VIBRATION_SOUND_INDEX + 1,
                      sounds_get_count(SOUND_TYPE_GOAT));
 
     /* --- Accelerometer (any-motion interrupt) --- */

@@ -235,6 +235,10 @@ static void relay_packet(const uint8_t *data, uint8_t data_len, uint8_t ttl)
 
 static void handle_mfg_data(const uint8_t *data, uint8_t data_len)
 {
+    if (data_len < HEADER_SIZE) {
+        return;
+    }
+
     if (data[HDR_OFF_COMPANY_LO] != COMPANY_ID_LO ||
         data[HDR_OFF_COMPANY_HI] != COMPANY_ID_HI ||
         data[HDR_OFF_MAGIC] != MAGIC_BYTE) {
