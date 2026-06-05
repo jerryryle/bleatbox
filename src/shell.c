@@ -28,7 +28,12 @@ static int cmd_play(const struct shell *sh, size_t argc, char **argv)
         return -EINVAL;
     }
 
-    unsigned long idx = strtoul(argv[2], NULL, 0);
+    char *end;
+    unsigned long idx = strtoul(argv[2], &end, 0);
+    if (end == argv[2]) {
+        shell_error(sh, "Invalid index: %s", argv[2]);
+        return -EINVAL;
+    }
 
     char path[32];
     int ret = sounds_get_path(type, (uint8_t)idx, path, sizeof(path));

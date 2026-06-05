@@ -5,6 +5,9 @@
 #ifndef VS1053B_H_
 #define VS1053B_H_
 
+#include <zephyr/device.h>
+
+#include <stdbool.h>
 #include <stdint.h>
 #include <stddef.h>
 

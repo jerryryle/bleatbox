@@ -91,10 +91,15 @@ static struct bt_le_ext_adv *g_adv_set;
 static struct k_msgq *g_evt_q;
 static uint8_t g_relay_ttl;
 static uint8_t g_seq;
-static bool g_adv_active;
+static volatile bool g_adv_active;
 
 #define MFG_DATA_MAX_SIZE (HEADER_SIZE + BLE_MAX_ASSIGNMENTS * ASSIGNMENT_ENTRY_SIZE)
 static uint8_t g_mfg_data[MFG_DATA_MAX_SIZE];
+
+static uint8_t g_relay_buf[MFG_DATA_MAX_SIZE];
+static uint8_t g_relay_len;
+static uint8_t g_relay_new_ttl;
+static struct k_work g_relay_work;
 
 /*
  * Scan parameters — continuous scanning (window == interval) for
@@ -214,7 +219,30 @@ int ble_advertise_assignments(const struct assignment *assignments,
 /* Scanning (receive)                                                 */
 /* ------------------------------------------------------------------ */
 
-static void relay_packet(const uint8_t *data, uint8_t data_len, uint8_t ttl)
+static void relay_work_handler(struct k_work *work)
+{
+    ARG_UNUSED(work);
+
+    if (g_adv_active) {
+        LOG_DBG("Relay skipped — advertising already active");
+        return;
+    }
+
+    memcpy(g_mfg_data, g_relay_buf, g_relay_len);
+    g_mfg_data[HDR_OFF_TTL] = g_relay_new_ttl;
+
+    int ret = start_advertising(g_relay_len);
+    if (ret) {
+        LOG_WRN("Relay failed: %d", ret);
+        return;
+    }
+
+    LOG_INF("Relaying: originator=0x%02x seq=%u ttl=%u",
+            g_mfg_data[HDR_OFF_ORIGINATOR], g_mfg_data[HDR_OFF_SEQ],
+            g_relay_new_ttl);
+}
+
+static void schedule_relay(const uint8_t *data, uint8_t data_len, uint8_t ttl)
 {
     if (data_len > MFG_DATA_MAX_SIZE) {
         LOG_WRN("Relay skipped — packet too large (%u > %u)",
@@ -222,22 +250,10 @@ static void relay_packet(const uint8_t *data, uint8_t data_len, uint8_t ttl)
         return;
     }
 
-    if (g_adv_active) {
-        LOG_DBG("Relay skipped — advertising already active");
-        return;
-    }
-
-    memcpy(g_mfg_data, data, data_len);
-    g_mfg_data[HDR_OFF_TTL] = ttl;
-
-    int ret = start_advertising(data_len);
-    if (ret) {
-        LOG_WRN("Relay failed: %d", ret);
-        return;
-    }
-
-    LOG_INF("Relaying: originator=0x%02x seq=%u ttl=%u",
-            g_mfg_data[HDR_OFF_ORIGINATOR], g_mfg_data[HDR_OFF_SEQ], ttl);
+    memcpy(g_relay_buf, data, data_len);
+    g_relay_len = data_len;
+    g_relay_new_ttl = ttl;
+    k_work_submit(&g_relay_work);
 }
 
 static void handle_mfg_data(const uint8_t *data, uint8_t data_len)
@@ -284,7 +300,7 @@ static void handle_mfg_data(const uint8_t *data, uint8_t data_len)
     }
 
     if (ttl > 0) {
-        relay_packet(data, data_len, ttl - 1);
+        schedule_relay(data, data_len, ttl - 1);
     }
 }
 
@@ -341,6 +357,7 @@ int ble_init(uint8_t device_id, struct k_msgq *event_q, uint8_t relay_ttl)
     g_seen_next = 0;
     g_seen_count = 0;
     memset(g_seen, 0, sizeof(g_seen));
+    k_work_init(&g_relay_work, relay_work_handler);
 
     int ret = bt_enable(NULL);
     if (ret) {
