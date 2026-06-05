@@ -188,7 +188,7 @@ int main(void)
     }
 
     /* --- BLE --- */
-    ret = ble_init(cfg.id, &event_q);
+    ret = ble_init(cfg.id, &event_q, cfg.relay_ttl);
     if (ret) {
         return ret;
     }
