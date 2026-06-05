@@ -125,6 +125,19 @@ static int parse_line(char *line, struct device_config *cfg, bool *has_id)
             return -EINVAL;
         }
         cfg->accel_threshold_mg = (uint16_t)v;
+    } else if (strcmp(key, "relay_ttl") == 0) {
+        char *val = strtok_r(NULL, " \t\r\n", &saveptr);
+        if (!val) {
+            LOG_ERR("'relay_ttl' requires a value");
+            return -EINVAL;
+        }
+        char *end;
+        unsigned long v = strtoul(val, &end, 10);
+        if (end == val || v > 255) {
+            LOG_ERR("relay_ttl must be 0-255, got: %s", val);
+            return -EINVAL;
+        }
+        cfg->relay_ttl = (uint8_t)v;
     } else {
         LOG_WRN("Unknown config key: %s", key);
     }
@@ -138,6 +151,7 @@ int device_config_load(struct device_config *cfg)
         .volume = 80,
         .delay_max_ms = 2000,
         .accel_threshold_mg = 200,
+        .relay_ttl = 2,
     };
 
     bool has_id = false;

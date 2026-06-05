@@ -15,7 +15,7 @@
 #include "sounds.h"
 
 /** Maximum assignments that fit in one broadcast packet. */
-#define BLE_MAX_ASSIGNMENTS 62
+#define BLE_MAX_ASSIGNMENTS 59
 
 #define BLE_SOUND_TYPE_BIT  7
 #define BLE_SOUND_TYPE_MASK (1U << BLE_SOUND_TYPE_BIT)
@@ -43,12 +43,16 @@ static inline uint8_t ble_sound_decode_index(uint8_t encoded)
  * @param device_id  This device's FICR-derived ID (used to recognize
  *                   our entry in received broadcasts).
  * @param event_q    Message queue to push EVENT_BLE_RX events into.
+ * @param relay_ttl  Maximum relay hops.  0 disables relaying.
  * @return 0 on success, negative errno on failure.
  */
-int ble_init(uint8_t device_id, struct k_msgq *event_q);
+int ble_init(uint8_t device_id, struct k_msgq *event_q, uint8_t relay_ttl);
 
 /**
  * Broadcast the given assignments via BLE extended advertising.
+ *
+ * The BLE module stamps the packet with this device as originator,
+ * an auto-incremented sequence number, and the configured relay TTL.
  *
  * @param assignments  Array of assignments to broadcast.
  * @param count        Number of entries in @p assignments.

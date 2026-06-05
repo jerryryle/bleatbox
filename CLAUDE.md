@@ -43,7 +43,7 @@ Tests use GoogleTest (C++), wrapping C code under test with `extern "C"`. Test f
 ## Design Principles
 
 - **Modules depend on abstractions, not each other.** A producer pushes events into a `k_msgq` — it never calls into the audio subsystem, and it doesn't know who consumes the events. New modules should follow this: communicate through the event queue or a narrow init-time interface, never by reaching into another module's state.
-- **Every module owns its state.** All module state is `static`. No module exposes its internal variables — only functions. If two modules need shared data, one owns it and the other asks for it through a function call.
+- **Every module owns its state.** All module state is `static`. No module exposes its internal variables — only functions. If two modules need shared data, one owns it and the other asks for it through a function call. Init functions must explicitly initialize all module state — never rely on startup code zeroing globals.
 - **Dependencies flow one direction.** `main()` knows about every module; modules don't know about `main()` or each other. The call graph should always be a tree rooted at `main()`, never a cycle.
 - **Solve the problem in front of you.** Don't add configuration for something that has exactly one correct value. Don't add an abstraction layer for something that has exactly one implementation. Don't add a feature that nobody has asked for yet.
 - **Eliminate duplication only when the duplicates must change together.** Three similar lines that serve different purposes are better than a shared helper that couples unrelated callers. Extract only when a change to one copy would always require the same change to the others.

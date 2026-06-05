@@ -13,6 +13,7 @@ struct device_config {
     uint16_t delay_min_ms;
     uint16_t delay_max_ms;
     uint16_t accel_threshold_mg;
+    uint8_t relay_ttl;
 };
 
 /**
