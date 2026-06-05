@@ -48,3 +48,8 @@ TEST(WrapToRange, ZeroMin)
 {
     EXPECT_EQ(wrap_to_range(7, 0, 3), 3u);
 }
+
+TEST(WrapToRange, FullRange)
+{
+    EXPECT_EQ(wrap_to_range(42, 0, UINT32_MAX), 42u);
+}
