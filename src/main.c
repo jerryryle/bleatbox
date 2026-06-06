@@ -62,7 +62,7 @@ K_MSGQ_DEFINE(event_q, sizeof(struct event), EVENT_QUEUE_DEPTH, 4);
 
 #define VIBRATION_COOLDOWN_MS 1000
 
-static bool g_drop_vibration_events;
+static volatile bool g_drop_vibration_events;
 
 static void cooldown_expired(struct k_timer *timer)
 {
