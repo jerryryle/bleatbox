@@ -31,9 +31,13 @@ static struct k_msgq *g_event_q;
 static volatile bool g_playing;
 
 #define SOUND_PATH_MAX 32
-static char g_pending_path[SOUND_PATH_MAX];
-static uint16_t g_pending_delay;
-static K_SEM_DEFINE(g_play_sem, 0, 1);
+
+struct play_request {
+    char path[SOUND_PATH_MAX];
+    uint16_t delay_ms;
+};
+
+K_MSGQ_DEFINE(g_play_q, sizeof(struct play_request), 1, 4);
 
 #define AUDIO_STACK_SIZE 4096
 #define AUDIO_PRIORITY 5
@@ -47,8 +51,7 @@ int audio_init(struct k_msgq *event_q)
 {
     g_event_q = event_q;
     g_playing = false;
-    g_pending_path[0] = '\0';
-    g_pending_delay = 0;
+    k_msgq_purge(&g_play_q);
 
     if (!device_is_ready(g_spi_dev)) {
         LOG_ERR("SPI device not ready");
@@ -150,22 +153,23 @@ static void playback_thread(void *p1, void *p2, void *p3)
     ARG_UNUSED(p3);
 
     for (;;) {
-        k_sem_take(&g_play_sem, K_FOREVER);
+        struct play_request req;
+        k_msgq_get(&g_play_q, &req, K_FOREVER);
 
-        if (g_pending_delay > 0) {
-            k_msleep(g_pending_delay);
+        if (req.delay_ms > 0) {
+            k_msleep(req.delay_ms);
         }
 
         struct fs_file_t f;
         fs_file_t_init(&f);
-        int ret = fs_open(&f, g_pending_path, FS_O_READ);
+        int ret = fs_open(&f, req.path, FS_O_READ);
         if (ret < 0) {
-            LOG_ERR("Cannot open %s: %d", g_pending_path, ret);
+            LOG_ERR("Cannot open %s: %d", req.path, ret);
             g_playing = false;
             continue;
         }
 
-        LOG_INF("Playing %s", g_pending_path);
+        LOG_INF("Playing %s", req.path);
 
         uint8_t buf[VS1053B_DATA_CHUNK];
         ssize_t nread;
@@ -205,9 +209,10 @@ void audio_play_sound(const char *path, uint16_t delay_ms)
         return;
     }
 
-    strncpy(g_pending_path, path, sizeof(g_pending_path) - 1);
-    g_pending_path[sizeof(g_pending_path) - 1] = '\0';
-    g_pending_delay = delay_ms;
+    struct play_request req = {.delay_ms = delay_ms};
+    strncpy(req.path, path, sizeof(req.path) - 1);
+    req.path[sizeof(req.path) - 1] = '\0';
+
     g_playing = true;
-    k_sem_give(&g_play_sem);
+    k_msgq_put(&g_play_q, &req, K_NO_WAIT);
 }
