@@ -39,6 +39,12 @@ LOG_MODULE_REGISTER(ble, LOG_LEVEL_INF);
 #define ASSIGNMENT_ENTRY_SIZE 4 /* device_id(1) + sound(1) + delay(2) */
 #define HEADER_SIZE 6 /* company_id(2) + magic(1) + originator(1) + seq(1) + ttl(1) */
 
+/* AD structure: 1 byte length + 1 byte type + manufacturer data */
+#define BLE_AD_OVERHEAD 2
+BUILD_ASSERT(BLE_AD_OVERHEAD + HEADER_SIZE + BLE_MAX_ASSIGNMENTS * ASSIGNMENT_ENTRY_SIZE
+             <= CONFIG_BT_CTLR_ADV_DATA_LEN_MAX,
+             "BLE_MAX_ASSIGNMENTS exceeds controller advertising data capacity");
+
 /* Offsets within the header */
 #define HDR_OFF_COMPANY_LO 0
 #define HDR_OFF_COMPANY_HI 1
@@ -203,18 +209,16 @@ static void relay_work_handler(struct k_work *work)
 
     memcpy(g_mfg_data, g_relay_buf, g_relay_len);
     g_mfg_data[HDR_OFF_TTL] = g_relay_new_ttl;
+    LOG_INF("Relaying: originator=0x%02x seq=%u ttl=%u",
+            g_relay_buf[HDR_OFF_ORIGINATOR], g_relay_buf[HDR_OFF_SEQ],
+            g_relay_new_ttl);
 
     int ret = start_advertising(g_relay_len);
     k_mutex_unlock(&g_tx_mutex);
 
     if (ret) {
         LOG_WRN("Relay failed: %d", ret);
-        return;
     }
-
-    LOG_INF("Relaying: originator=0x%02x seq=%u ttl=%u",
-            g_relay_buf[HDR_OFF_ORIGINATOR], g_relay_buf[HDR_OFF_SEQ],
-            g_relay_new_ttl);
 }
 
 static void schedule_relay(const uint8_t *data, uint8_t data_len, uint8_t ttl)
@@ -225,9 +229,12 @@ static void schedule_relay(const uint8_t *data, uint8_t data_len, uint8_t ttl)
         return;
     }
 
+    k_mutex_lock(&g_tx_mutex, K_FOREVER);
     memcpy(g_relay_buf, data, data_len);
     g_relay_len = data_len;
     g_relay_new_ttl = ttl;
+    k_mutex_unlock(&g_tx_mutex);
+
     int ret = k_work_submit(&g_relay_work);
     if (ret == 0) {
         LOG_DBG("Relay already pending — previous relay superseded");

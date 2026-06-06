@@ -146,12 +146,6 @@ int main(void)
         return 0;
     }
 
-    /* --- VS1053B patches (must precede playback) --- */
-    // ret = audio_apply_patch(SDCARD_MOUNT_POINT "/flaclatm.bin");
-    // if (ret) {
-    //     LOG_WRN("No codec patches loaded (%d) — playback may be limited", ret);
-    // }
-
     /* --- Sound discovery --- */
     ret = sounds_scan();
     if (ret) {
