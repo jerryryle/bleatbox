@@ -99,7 +99,10 @@ static void adv_sent_cb(struct bt_le_ext_adv *adv,
     g_adv_active = false;
     LOG_INF("BLE advertising done (%u events), resuming scan",
             info->num_sent);
-    bt_le_scan_start(&g_scan_params, NULL);
+    int ret = bt_le_scan_start(&g_scan_params, NULL);
+    if (ret) {
+        LOG_ERR("Failed to restart scanning: %d", ret);
+    }
 }
 
 static const struct bt_le_ext_adv_cb g_adv_cbs = {
@@ -236,7 +239,9 @@ static void schedule_relay(const uint8_t *data, uint8_t data_len, uint8_t ttl)
     k_mutex_unlock(&g_tx_mutex);
 
     int ret = k_work_submit(&g_relay_work);
-    if (ret == 0) {
+    if (ret < 0) {
+        LOG_ERR("Relay work submit failed: %d", ret);
+    } else if (ret == 0) {
         LOG_DBG("Relay already pending — previous relay superseded");
     }
 }
@@ -309,6 +314,7 @@ static void scan_recv_cb(const struct bt_le_scan_recv_info *info,
 
         if (ad_type != BT_DATA_MANUFACTURER_DATA ||
             data_len < HEADER_SIZE ||
+            data_len > buf->len ||
             (data_len - HEADER_SIZE) % ASSIGNMENT_ENTRY_SIZE != 0) {
             if (data_len <= buf->len) {
                 net_buf_simple_pull(buf, data_len);
