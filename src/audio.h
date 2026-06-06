@@ -5,6 +5,8 @@
 #ifndef AUDIO_H_
 #define AUDIO_H_
 
+#include <zephyr/kernel.h>
+
 #include <stdbool.h>
 #include <stdint.h>
 
@@ -13,9 +15,11 @@
  *
  * Must be called before audio_play_sound() or audio_set_volume().
  *
+ * @param event_q  Message queue for posting EVENT_AUDIO_DONE when
+ *                 playback finishes.  May be NULL to disable.
  * @return 0 on success, negative errno on failure.
  */
-int audio_init(void);
+int audio_init(struct k_msgq *event_q);
 
 /**
  * Apply a VS1053B patch from the SD card.

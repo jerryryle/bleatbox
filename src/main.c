@@ -57,13 +57,30 @@ static const struct gpio_dt_spec g_led = GPIO_DT_SPEC_GET(LED0_NODE, gpios);
 K_MSGQ_DEFINE(event_q, sizeof(struct event), EVENT_QUEUE_DEPTH, 4);
 
 /* ------------------------------------------------------------------ */
+/* Vibration cooldown                                                 */
+/* ------------------------------------------------------------------ */
+
+#define VIBRATION_COOLDOWN_MS 1000
+
+static bool g_drop_vibration_events;
+
+static void cooldown_expired(struct k_timer *timer)
+{
+    ARG_UNUSED(timer);
+    g_drop_vibration_events = false;
+    LOG_INF("Vibration cooldown expired");
+}
+
+static K_TIMER_DEFINE(g_vibration_cooldown_timer, cooldown_expired, NULL);
+
+/* ------------------------------------------------------------------ */
 /* Event handlers                                                     */
 /* ------------------------------------------------------------------ */
 
 static void handle_vibration(void)
 {
-    if (audio_is_playing()) {
-        LOG_INF("Vibration dropped — sound already playing");
+    if (g_drop_vibration_events) {
+        LOG_INF("Vibration dropped — cooldown active");
         return;
     }
 
@@ -74,6 +91,8 @@ static void handle_vibration(void)
         LOG_ERR("Cannot resolve sound %u: %d", VIBRATION_SOUND_INDEX, ret);
         return;
     }
+
+    g_drop_vibration_events = true;
 
     LOG_INF("Vibration detected — playing %s", path);
     audio_play_sound(path, 0);
@@ -133,7 +152,7 @@ int main(void)
     }
 
     /* --- Audio (SPI + VS1053B codec) --- */
-    int ret = audio_init();
+    int ret = audio_init(&event_q);
     if (ret) {
         return ret;
     }
@@ -184,6 +203,8 @@ int main(void)
         return ret;
     }
 
+    g_drop_vibration_events = false;
+
     LOG_INF("BleatBox ready — waiting for events");
 
     /* --- Event loop --- */
@@ -203,6 +224,10 @@ int main(void)
             break;
         case EVENT_BLE_RX:
             handle_ble_rx(&evt);
+            break;
+        case EVENT_AUDIO_DONE:
+            k_timer_start(&g_vibration_cooldown_timer,
+                          K_MSEC(VIBRATION_COOLDOWN_MS), K_NO_WAIT);
             break;
         }
     }
