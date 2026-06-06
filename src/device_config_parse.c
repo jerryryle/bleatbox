@@ -1,0 +1,120 @@
+#include <stdlib.h>
+#include <string.h>
+#include <errno.h>
+
+#include "device_config_parse.h"
+
+int device_config_parse_hex_byte(const char *s, uint8_t *out)
+{
+    char *end;
+    unsigned long val = strtoul(s, &end, 16);
+
+    if (end == s || val > 0xFF) {
+        return -EINVAL;
+    }
+    *out = (uint8_t)val;
+    return 0;
+}
+
+int device_config_parse_line(char *line, struct device_config *cfg,
+                             bool *has_id)
+{
+    while (*line == ' ' || *line == '\t') {
+        line++;
+    }
+
+    if (*line == '#' || *line == '\n' || *line == '\r' || *line == '\0') {
+        return 0;
+    }
+
+    char *saveptr;
+    char *key = strtok_r(line, " \t\r\n", &saveptr);
+
+    if (!key) {
+        return 0;
+    }
+
+    if (strcmp(key, "id") == 0) {
+        char *val = strtok_r(NULL, " \t\r\n", &saveptr);
+        if (!val) {
+            return -EINVAL;
+        }
+        if (device_config_parse_hex_byte(val, &cfg->id)) {
+            return -EINVAL;
+        }
+        *has_id = true;
+    } else if (strcmp(key, "peers") == 0) {
+        cfg->peer_count = 0;
+        char *val;
+
+        while ((val = strtok_r(NULL, " \t\r\n", &saveptr)) != NULL) {
+            if (cfg->peer_count >= DEVICE_CONFIG_MAX_PEERS) {
+                return -ENOSPC;
+            }
+            if (device_config_parse_hex_byte(val, &cfg->peers[cfg->peer_count])) {
+                return -EINVAL;
+            }
+            cfg->peer_count++;
+        }
+        if (cfg->peer_count == 0) {
+            return -EINVAL;
+        }
+    } else if (strcmp(key, "volume") == 0) {
+        char *val = strtok_r(NULL, " \t\r\n", &saveptr);
+        if (!val) {
+            return -EINVAL;
+        }
+        char *end;
+        unsigned long v = strtoul(val, &end, 10);
+        if (end == val || v > 100) {
+            return -EINVAL;
+        }
+        cfg->volume = (uint8_t)v;
+    } else if (strcmp(key, "delay_min") == 0) {
+        char *val = strtok_r(NULL, " \t\r\n", &saveptr);
+        if (!val) {
+            return -EINVAL;
+        }
+        char *end;
+        unsigned long v = strtoul(val, &end, 10);
+        if (end == val || v > UINT16_MAX) {
+            return -EINVAL;
+        }
+        cfg->delay_min_ms = (uint16_t)v;
+    } else if (strcmp(key, "delay_max") == 0) {
+        char *val = strtok_r(NULL, " \t\r\n", &saveptr);
+        if (!val) {
+            return -EINVAL;
+        }
+        char *end;
+        unsigned long v = strtoul(val, &end, 10);
+        if (end == val || v > UINT16_MAX) {
+            return -EINVAL;
+        }
+        cfg->delay_max_ms = (uint16_t)v;
+    } else if (strcmp(key, "accel_threshold") == 0) {
+        char *val = strtok_r(NULL, " \t\r\n", &saveptr);
+        if (!val) {
+            return -EINVAL;
+        }
+        char *end;
+        unsigned long v = strtoul(val, &end, 10);
+        if (end == val || v == 0 || v > UINT16_MAX) {
+            return -EINVAL;
+        }
+        cfg->accel_threshold_mg = (uint16_t)v;
+    } else if (strcmp(key, "relay_ttl") == 0) {
+        char *val = strtok_r(NULL, " \t\r\n", &saveptr);
+        if (!val) {
+            return -EINVAL;
+        }
+        char *end;
+        unsigned long v = strtoul(val, &end, 10);
+        if (end == val || v > 255) {
+            return -EINVAL;
+        }
+        cfg->relay_ttl = (uint8_t)v;
+    }
+
+    return 0;
+}
