@@ -88,6 +88,18 @@ static const struct bt_le_scan_param g_scan_params = {
     .window = SCAN_WINDOW,
 };
 
+static void adv_sent_cb(struct bt_le_ext_adv *adv,
+                         struct bt_le_ext_adv_sent_info *info);
+static const struct bt_le_ext_adv_cb g_adv_cbs = {
+    .sent = adv_sent_cb,
+};
+
+static void scan_recv_cb(const struct bt_le_scan_recv_info *info,
+                         struct net_buf_simple *buf);
+static struct bt_le_scan_cb g_scan_cbs = {
+    .recv = scan_recv_cb,
+};
+
 /* ------------------------------------------------------------------ */
 /* Advertising (transmit)                                             */
 /* ------------------------------------------------------------------ */
@@ -104,10 +116,6 @@ static void adv_sent_cb(struct bt_le_ext_adv *adv,
         LOG_ERR("Failed to restart scanning: %d", ret);
     }
 }
-
-static const struct bt_le_ext_adv_cb g_adv_cbs = {
-    .sent = adv_sent_cb,
-};
 
 static int start_advertising(uint8_t mfg_data_size)
 {
@@ -328,10 +336,6 @@ static void scan_recv_cb(const struct bt_le_scan_recv_info *info,
 
     net_buf_simple_restore(buf, &state);
 }
-
-static struct bt_le_scan_cb g_scan_cbs = {
-    .recv = scan_recv_cb,
-};
 
 /* ------------------------------------------------------------------ */
 /* Initialization                                                     */

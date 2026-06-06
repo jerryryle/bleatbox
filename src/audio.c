@@ -28,6 +28,21 @@ LOG_MODULE_REGISTER(audio, LOG_LEVEL_INF);
 static const struct device *g_spi_dev = DEVICE_DT_GET(DT_NODELABEL(spi1));
 static struct k_msgq *g_event_q;
 
+static volatile bool g_playing;
+
+#define SOUND_PATH_MAX 32
+static char g_pending_path[SOUND_PATH_MAX];
+static uint16_t g_pending_delay;
+static K_SEM_DEFINE(g_play_sem, 0, 1);
+
+#define AUDIO_STACK_SIZE 4096
+#define AUDIO_PRIORITY 5
+
+static void playback_thread(void *p1, void *p2, void *p3);
+K_THREAD_DEFINE(audio_tid, AUDIO_STACK_SIZE,
+                playback_thread, NULL, NULL, NULL,
+                AUDIO_PRIORITY, 0, 0);
+
 int audio_init(struct k_msgq *event_q)
 {
     g_event_q = event_q;
@@ -124,19 +139,6 @@ int audio_set_volume(uint8_t percent)
 /* Playback thread                                                    */
 /* ------------------------------------------------------------------ */
 
-/*
- * True from the moment audio_play_sound() is called until the
- * background thread finishes streaming.  Set by the caller before
- * signaling the thread (no race window).  Read from ISR / scan
- * callback / main loop to gate event processing.
- */
-static volatile bool g_playing;
-
-#define SOUND_PATH_MAX 32
-static char g_pending_path[SOUND_PATH_MAX];
-static uint16_t g_pending_delay;
-static K_SEM_DEFINE(g_play_sem, 0, 1);
-
 static void playback_thread(void *p1, void *p2, void *p3)
 {
     ARG_UNUSED(p1);
@@ -182,13 +184,6 @@ static void playback_thread(void *p1, void *p2, void *p3)
         }
     }
 }
-
-#define AUDIO_STACK_SIZE 4096
-#define AUDIO_PRIORITY 5
-
-K_THREAD_DEFINE(audio_tid, AUDIO_STACK_SIZE,
-                playback_thread, NULL, NULL, NULL,
-                AUDIO_PRIORITY, 0, 0);
 
 /* ------------------------------------------------------------------ */
 /* Public API                                                         */
