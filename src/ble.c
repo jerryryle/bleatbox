@@ -21,6 +21,7 @@
 #include <string.h>
 
 #include "ble.h"
+#include "broadcast_log.h"
 #include "events.h"
 
 LOG_MODULE_REGISTER(ble, LOG_LEVEL_INF);
@@ -47,42 +48,6 @@ LOG_MODULE_REGISTER(ble, LOG_LEVEL_INF);
 #define HDR_OFF_TTL        5
 
 /* ------------------------------------------------------------------ */
-/* Seen-table (dedup ring buffer)                                     */
-/* ------------------------------------------------------------------ */
-
-#define SEEN_TABLE_SIZE 8
-
-struct seen_entry {
-    uint8_t originator;
-    uint8_t seq;
-};
-
-static struct seen_entry g_seen[SEEN_TABLE_SIZE];
-static uint8_t g_seen_next;
-static uint8_t g_seen_count;
-
-static bool seen_check(uint8_t originator, uint8_t seq)
-{
-    for (int i = 0; i < g_seen_count; i++) {
-        if (g_seen[i].originator == originator &&
-            g_seen[i].seq == seq) {
-            return true;
-        }
-    }
-    return false;
-}
-
-static void seen_record(uint8_t originator, uint8_t seq)
-{
-    g_seen[g_seen_next].originator = originator;
-    g_seen[g_seen_next].seq = seq;
-    g_seen_next = (g_seen_next + 1) % SEEN_TABLE_SIZE;
-    if (g_seen_count < SEEN_TABLE_SIZE) {
-        g_seen_count++;
-    }
-}
-
-/* ------------------------------------------------------------------ */
 /* Module state                                                       */
 /* ------------------------------------------------------------------ */
 
@@ -100,6 +65,7 @@ static uint8_t g_relay_buf[MFG_DATA_MAX_SIZE];
 static uint8_t g_relay_len;
 static uint8_t g_relay_new_ttl;
 static struct k_work g_relay_work;
+static K_MUTEX_DEFINE(g_tx_mutex);
 
 /*
  * Scan parameters — continuous scanning (window == interval) for
@@ -182,6 +148,11 @@ int ble_advertise_assignments(const struct assignment *assignments,
 
     uint8_t seq = g_seq++;
 
+    /* Record in dedup table so we don't process our own broadcast */
+    broadcast_log_record(g_local_device_id, seq);
+
+    k_mutex_lock(&g_tx_mutex, K_FOREVER);
+
     /* Build header */
     g_mfg_data[HDR_OFF_COMPANY_LO] = COMPANY_ID_LO;
     g_mfg_data[HDR_OFF_COMPANY_HI] = COMPANY_ID_HI;
@@ -202,10 +173,9 @@ int ble_advertise_assignments(const struct assignment *assignments,
 
     uint8_t mfg_data_size = HEADER_SIZE + count * ASSIGNMENT_ENTRY_SIZE;
 
-    /* Record in seen-table so we don't process our own broadcast */
-    seen_record(g_local_device_id, seq);
-
     int ret = start_advertising(mfg_data_size);
+    k_mutex_unlock(&g_tx_mutex);
+
     if (ret) {
         return ret;
     }
@@ -223,7 +193,10 @@ static void relay_work_handler(struct k_work *work)
 {
     ARG_UNUSED(work);
 
+    k_mutex_lock(&g_tx_mutex, K_FOREVER);
+
     if (g_adv_active) {
+        k_mutex_unlock(&g_tx_mutex);
         LOG_DBG("Relay skipped — advertising already active");
         return;
     }
@@ -232,13 +205,15 @@ static void relay_work_handler(struct k_work *work)
     g_mfg_data[HDR_OFF_TTL] = g_relay_new_ttl;
 
     int ret = start_advertising(g_relay_len);
+    k_mutex_unlock(&g_tx_mutex);
+
     if (ret) {
         LOG_WRN("Relay failed: %d", ret);
         return;
     }
 
     LOG_INF("Relaying: originator=0x%02x seq=%u ttl=%u",
-            g_mfg_data[HDR_OFF_ORIGINATOR], g_mfg_data[HDR_OFF_SEQ],
+            g_relay_buf[HDR_OFF_ORIGINATOR], g_relay_buf[HDR_OFF_SEQ],
             g_relay_new_ttl);
 }
 
@@ -253,7 +228,10 @@ static void schedule_relay(const uint8_t *data, uint8_t data_len, uint8_t ttl)
     memcpy(g_relay_buf, data, data_len);
     g_relay_len = data_len;
     g_relay_new_ttl = ttl;
-    k_work_submit(&g_relay_work);
+    int ret = k_work_submit(&g_relay_work);
+    if (ret == 0) {
+        LOG_DBG("Relay already pending — previous relay superseded");
+    }
 }
 
 static void handle_mfg_data(const uint8_t *data, uint8_t data_len)
@@ -272,12 +250,11 @@ static void handle_mfg_data(const uint8_t *data, uint8_t data_len)
     uint8_t seq = data[HDR_OFF_SEQ];
     uint8_t ttl = data[HDR_OFF_TTL];
 
-    if (seen_check(originator, seq)) {
+    if (broadcast_log_check_and_record(originator, seq)) {
         LOG_DBG("Duplicate dropped: originator=0x%02x seq=%u",
                 originator, seq);
         return;
     }
-    seen_record(originator, seq);
 
     int num_entries = (data_len - HEADER_SIZE) / ASSIGNMENT_ENTRY_SIZE;
     for (int i = 0; i < num_entries; i++) {
@@ -354,9 +331,7 @@ int ble_init(uint8_t device_id, struct k_msgq *event_q, uint8_t relay_ttl)
     g_relay_ttl = relay_ttl;
     g_seq = 0;
     g_adv_active = false;
-    g_seen_next = 0;
-    g_seen_count = 0;
-    memset(g_seen, 0, sizeof(g_seen));
+    broadcast_log_init();
     k_work_init(&g_relay_work, relay_work_handler);
 
     int ret = bt_enable(NULL);

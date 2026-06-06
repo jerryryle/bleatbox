@@ -9,6 +9,8 @@ target_sources(app PRIVATE
     src/sdcard.c
     src/audio.c
     src/ble.c
+    src/broadcast_log.c
+    src/broadcast_log_core.c
     src/assignments.c
     src/sounds.c
     src/wrap_to_range.c
