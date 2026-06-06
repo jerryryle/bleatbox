@@ -1,14 +1,14 @@
 /*
  * Devicetree overlay for Adafruit Feather nRF52840 Express
  * with Adafruit Music Maker FeatherWing (VS1053B + SD card)
- * and LIS2DH12TR accelerometer.
+ * and LIS2DW12 accelerometer.
  *
  * Feather pin mapping (nRF52840 GPIO):
  *   D5  = P1.08  ->  SD card CS (directly on FeatherWing)
  *   D6  = P0.07  ->  VS1053B XCS  (SCI command chip select)
  *   D9  = P0.26  ->  VS1053B DREQ (data request, active high)
  *   D10 = P0.27  ->  VS1053B XDCS (SDI data chip select)
- *   A0  = P0.04  ->  LIS2DH12TR INT1 (any-motion interrupt)
+ *   A0  = P0.04  ->  LIS2DW12 INT1 (wakeup interrupt)
  *
  *   SPI bus (feather header):
  *     SCK  = P0.14
@@ -39,12 +39,15 @@
 };
 
 &i2c0 {
-	lis2dh12: lis2dh12@19 {
-		compatible = "st,lis2dh12", "st,lis2dh";
+	lis2dw12: lis2dw12@19 {
+		compatible = "st,lis2dw12";
 		reg = <0x19>;
 		irq-gpios = <&gpio0 4 GPIO_ACTIVE_HIGH>;
-		anym-on-int1;
-		disconnect-sdo-sa0-pull-up;
+		int-pin = <1>;
+		power-mode = <0>; /* LP mode 1 (12-bit) */
+		odr = <100>;
+		range = <2>;
+		wakeup-duration = <0>; /* 1 ODR cycle above threshold */
 	};
 };
 

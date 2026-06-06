@@ -8,11 +8,11 @@ vibration.
 
 - **MCU:** Adafruit Feather nRF52840 Express
 - **Audio:** Adafruit Music Maker FeatherWing w/ Amp (VS1053B codec)
-- **Trigger:** LIS2DH12TR accelerometer on I2C0, INT1 on pin A0 (P0.04)
+- **Trigger:** LIS2DW12 accelerometer on I2C0, INT1 on pin A0 (P0.04)
 
 ### Wiring the accelerometer
 
-Connect an LIS2DH12TR breakout board to the Feather header:
+Connect a LIS2DW12 breakout board to the Feather header:
 
 | Breakout Pin | Feather Pin | Notes |
 |---|---|---|
@@ -20,8 +20,8 @@ Connect an LIS2DH12TR breakout board to the Feather header:
 | GND | GND | Ground |
 | SDA | SDA | I2C data |
 | SCL | SCL | I2C clock |
-| SDO/SA0 | GND | Sets I2C address to 0x18 |
-| INT1 | A0 | Any-motion interrupt |
+| SDO/SA0 | 3V | Sets I2C address to 0x19 |
+| INT1 | A0 | Wakeup interrupt |
 
 ### SD card
 
@@ -213,7 +213,7 @@ peers 0x01 0x42 0xb7 0x05 0x9c
 # Playback volume (0 = silent, 100 = max, default 80)
 volume 80
 
-# Accelerometer any-motion threshold in milli-g (default 200)
+# Accelerometer wakeup threshold in milli-g (default 200)
 accel_threshold 150
 ```
 
@@ -223,7 +223,7 @@ accel_threshold 150
   network. Up to 30 peers are supported.
 - **`volume`** *(optional)* — playback volume, 0–100. Defaults to 80 if
   omitted.
-- **`accel_threshold`** *(optional)* — any-motion detection threshold in
+- **`accel_threshold`** *(optional)* — wakeup detection threshold in
   milli-g. Defaults to 200 if omitted. Use the `accel` shell command to find
   the right value for your setup.
 - Lines starting with `#` are comments.
