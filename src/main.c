@@ -196,11 +196,11 @@ int main(void)
     struct event evt;
     for (;;) {
         /*
-                 * Block until an event arrives.  While blocked, the idle
-                 * thread runs and the nRF52840 enters System ON idle (ARM
-                 * WFE) — the lowest power state that keeps BLE scanning
-                 * alive.
-                 */
+         * Block until an event arrives.  While blocked, the idle
+         * thread runs and the nRF52840 enters System ON idle (ARM
+         * WFE) — the lowest power state that keeps BLE scanning
+         * alive.
+         */
         k_msgq_get(&event_q, &evt, K_FOREVER);
 
         switch (evt.type) {

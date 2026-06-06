@@ -23,7 +23,7 @@ static bool g_mounted;
 int sdcard_mount(void)
 {
     static const char *disk = "SD";
-    uint32_t block_count, block_size;
+    uint32_t block_count = 0, block_size = 0;
 
     if (disk_access_init(disk) != 0) {
         LOG_ERR("SD card init failed");
