@@ -1,5 +1,5 @@
 /*
- * LIS2DH12 accelerometer — any-motion event producer.
+ * LIS2DW12 accelerometer — wakeup event producer.
  */
 
 #include <zephyr/kernel.h>
@@ -14,17 +14,18 @@
 
 LOG_MODULE_REGISTER(accel, LOG_LEVEL_INF);
 
-#define LIS2DH_REG_CTRL1 0x20
-#define LIS2DH_REG_CTRL2 0x21
-#define LIS2DH_REG_REFERENCE 0x26
-#define LIS2DH_HPIS1 BIT(0)
-#define LIS2DH_ODR_100HZ_LP 0x57 /* ODR=100Hz, low-power, XYZ enabled */
+#define LIS2DW12_REG_CTRL1 0x20
+
+/*
+ * 100 Hz, low-power mode 1: ODR[7:4]=0101, MODE[3:2]=00, LP_MODE[1:0]=01.
+ */
+#define LIS2DW12_ODR_100HZ_LP1 0x51
 
 static const struct device *g_accel_dev =
-    DEVICE_DT_GET(DT_NODELABEL(lis2dh12));
+    DEVICE_DT_GET(DT_NODELABEL(lis2dw12));
 
 static const struct i2c_dt_spec g_i2c_spec =
-    I2C_DT_SPEC_GET(DT_NODELABEL(lis2dh12));
+    I2C_DT_SPEC_GET(DT_NODELABEL(lis2dw12));
 
 static struct k_msgq *g_evt_q;
 
@@ -40,11 +41,12 @@ int accel_init(struct k_msgq *event_q, uint16_t threshold_mg)
     g_evt_q = event_q;
 
     if (!device_is_ready(g_accel_dev)) {
-        LOG_ERR("LIS2DH12 device not ready");
+        LOG_ERR("LIS2DW12 device not ready");
         return -ENODEV;
     }
 
-    /* Set any-motion threshold */
+    /* Set wakeup threshold via the driver's attr interface.
+     * Convert mg to m/s²: val = mg * 9.807 / 1000. */
     uint32_t ums2 = (uint32_t)threshold_mg * 9807;
     struct sensor_value threshold_val = {
         .val1 = ums2 / 1000000,
@@ -52,24 +54,15 @@ int accel_init(struct k_msgq *event_q, uint16_t threshold_mg)
     };
 
     int ret = sensor_attr_set(g_accel_dev, SENSOR_CHAN_ACCEL_XYZ,
-                              SENSOR_ATTR_SLOPE_TH, &threshold_val);
+                              SENSOR_ATTR_UPPER_THRESH, &threshold_val);
     if (ret) {
-        LOG_ERR("Failed to set slope threshold: %d", ret);
+        LOG_ERR("Failed to set wakeup threshold: %d", ret);
         return ret;
     }
 
-    /* Require 1 sample above threshold to trigger */
-    struct sensor_value dur_val = {.val1 = 1};
-    ret = sensor_attr_set(g_accel_dev, SENSOR_CHAN_ACCEL_XYZ,
-                          SENSOR_ATTR_SLOPE_DUR, &dur_val);
-    if (ret) {
-        LOG_ERR("Failed to set slope duration: %d", ret);
-        return ret;
-    }
-
-    /* Register any-motion trigger */
+    /* Register wakeup trigger */
     struct sensor_trigger trig = {
-        .type = SENSOR_TRIG_DELTA,
+        .type = SENSOR_TRIG_MOTION,
         .chan = SENSOR_CHAN_ACCEL_XYZ,
     };
 
@@ -79,29 +72,7 @@ int accel_init(struct k_msgq *event_q, uint16_t threshold_mg)
         return ret;
     }
 
-    /*
-     * The Zephyr LIS2DH driver doesn't enable the high-pass filter
-     * for the interrupt source.  Without it, the threshold is compared
-     * against raw acceleration (including gravity), so a 200 mg
-     * threshold fires constantly from the ~1 g Z-axis reading.
-     * Enable HPIS1 so the interrupt sees only changes in acceleration.
-     */
-    ret = i2c_reg_write_byte_dt(&g_i2c_spec, LIS2DH_REG_CTRL2, LIS2DH_HPIS1);
-    if (ret) {
-        LOG_ERR("Failed to enable HP filter for INT1: %d", ret);
-        return ret;
-    }
-
-    /* Reading REFERENCE resets the HP filter, setting the current
-     * acceleration (including gravity) as the baseline. */
-    uint8_t dummy;
-    ret = i2c_reg_read_byte_dt(&g_i2c_spec, LIS2DH_REG_REFERENCE, &dummy);
-    if (ret) {
-        LOG_ERR("Failed to read reference register: %d", ret);
-        return ret;
-    }
-
-    LOG_INF("LIS2DH12 ready — threshold %u mg", threshold_mg);
+    LOG_INF("LIS2DW12 ready — threshold %u mg", threshold_mg);
     return 0;
 }
 
@@ -127,17 +98,17 @@ int accel_sample_xyz(struct sensor_value *x,
 
 int accel_odr_boost(uint8_t *prev_ctrl1)
 {
-    int ret = i2c_reg_read_byte_dt(&g_i2c_spec, LIS2DH_REG_CTRL1,
+    int ret = i2c_reg_read_byte_dt(&g_i2c_spec, LIS2DW12_REG_CTRL1,
                                    prev_ctrl1);
     if (ret) {
         return ret;
     }
-    return i2c_reg_write_byte_dt(&g_i2c_spec, LIS2DH_REG_CTRL1,
-                                 LIS2DH_ODR_100HZ_LP);
+    return i2c_reg_write_byte_dt(&g_i2c_spec, LIS2DW12_REG_CTRL1,
+                                 LIS2DW12_ODR_100HZ_LP1);
 }
 
 int accel_odr_restore(uint8_t prev_ctrl1)
 {
-    return i2c_reg_write_byte_dt(&g_i2c_spec, LIS2DH_REG_CTRL1,
+    return i2c_reg_write_byte_dt(&g_i2c_spec, LIS2DW12_REG_CTRL1,
                                  prev_ctrl1);
 }

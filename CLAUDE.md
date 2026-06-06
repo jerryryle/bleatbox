@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-BleatBox is Zephyr RTOS firmware for Adafruit Feather nRF52840 Express boards that trigger synchronized sound playback over BLE when any device detects motion. Hardware: Adafruit Feather nRF52840 Express, Music Maker FeatherWing (VS1053B codec + SD card), LIS2DH12TR accelerometer.
+BleatBox is Zephyr RTOS firmware for Adafruit Feather nRF52840 Express boards that trigger synchronized sound playback over BLE when any device detects motion. Hardware: Adafruit Feather nRF52840 Express, Music Maker FeatherWing (VS1053B codec + SD card), LIS2DW12 accelerometer.
 
 ## Build Commands
 

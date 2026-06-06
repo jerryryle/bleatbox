@@ -3,7 +3,7 @@
  *
  * Hardware: Adafruit Feather nRF52840 Express
  *           Adafruit Music Maker FeatherWing (VS1053B codec + SD card)
- *           LIS2DH12TR accelerometer on I2C0, INT1 on A0 (P0.04)
+ *           LIS2DW12 accelerometer on I2C0, INT1 on A0 (P0.04)
  *
  * Architecture: event-driven main loop.
  *

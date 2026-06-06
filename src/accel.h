@@ -1,9 +1,9 @@
 /*
- * LIS2DH12 accelerometer — any-motion event producer.
+ * LIS2DW12 accelerometer — wakeup event producer.
  *
- * Configures the accelerometer in low-power mode with an any-motion
+ * Configures the accelerometer in low-power mode with a wakeup
  * interrupt threshold and pushes EVENT_VIBRATION into the provided
- * message queue on each debounced trigger.
+ * message queue on each trigger.
  */
 
 #ifndef ACCEL_H_
@@ -13,10 +13,10 @@
 #include <zephyr/drivers/sensor.h>
 
 /**
- * Initialize the LIS2DH12 accelerometer and any-motion interrupt.
+ * Initialize the LIS2DW12 accelerometer and wakeup interrupt.
  *
  * @param event_q       Message queue to push EVENT_VIBRATION events into.
- * @param threshold_mg  Any-motion threshold in milli-g (e.g. 200 = 200 mg).
+ * @param threshold_mg  Wakeup threshold in milli-g (e.g. 200 = 200 mg).
  * @return 0 on success, negative errno on failure.
  */
 int accel_init(struct k_msgq *event_q, uint16_t threshold_mg);
