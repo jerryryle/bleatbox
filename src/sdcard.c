@@ -22,6 +22,8 @@ static bool g_mounted;
 
 int sdcard_mount(void)
 {
+    g_mounted = false;
+
     static const char *disk = "SD";
     uint32_t block_count = 0, block_size = 0;
 

@@ -163,12 +163,12 @@ int ble_advertise_assignments(const struct assignment *assignments,
         return -EINVAL;
     }
 
+    k_mutex_lock(&g_tx_mutex, K_FOREVER);
+
     uint8_t seq = g_seq++;
 
     /* Record in dedup table so we don't process our own broadcast */
     broadcast_log_record(g_local_device_id, seq);
-
-    k_mutex_lock(&g_tx_mutex, K_FOREVER);
 
     /* Build header */
     g_mfg_data[HDR_OFF_COMPANY_LO] = COMPANY_ID_LO;
