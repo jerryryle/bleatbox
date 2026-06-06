@@ -15,5 +15,7 @@ target_sources(app PRIVATE
     src/sounds.c
     src/wrap_to_range.c
     src/device_config.c
+    src/device_config_parse.c
+    src/sounds_match.c
     src/shell.c
 )
