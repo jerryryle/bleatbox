@@ -16,6 +16,7 @@
 #include <string.h>
 
 #include "audio.h"
+#include "events.h"
 #include "vs1053b.h"
 
 LOG_MODULE_REGISTER(audio, LOG_LEVEL_INF);
@@ -25,9 +26,11 @@ LOG_MODULE_REGISTER(audio, LOG_LEVEL_INF);
 /* ------------------------------------------------------------------ */
 
 static const struct device *g_spi_dev = DEVICE_DT_GET(DT_NODELABEL(spi1));
+static struct k_msgq *g_event_q;
 
-int audio_init(void)
+int audio_init(struct k_msgq *event_q)
 {
+    g_event_q = event_q;
     if (!device_is_ready(g_spi_dev)) {
         LOG_ERR("SPI device not ready");
         return -ENODEV;
@@ -172,6 +175,11 @@ static void playback_thread(void *p1, void *p2, void *p3)
         vs1053b_end_playback();
         g_playing = false;
         LOG_INF("Playback finished");
+
+        if (g_event_q) {
+            struct event done_evt = {.type = EVENT_AUDIO_DONE};
+            k_msgq_put(g_event_q, &done_evt, K_NO_WAIT);
+        }
     }
 }
 
