@@ -2,6 +2,7 @@
  * Assignment generation — random sound/delay for each peer device.
  */
 
+#include <stdbool.h>
 #include <string.h>
 #include <errno.h>
 #include <zephyr/random/random.h>

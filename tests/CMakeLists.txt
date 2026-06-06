@@ -26,6 +26,6 @@ foreach(TEST_FILE ${TEST_SOURCES})
 endforeach()
 
 add_executable(tests ${TEST_SOURCES} ${MODULE_SOURCES})
-target_include_directories(tests PRIVATE ${SRC_DIR})
+target_include_directories(tests PRIVATE ${SRC_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/fakes)
 target_link_libraries(tests GTest::gtest_main)
 add_test(NAME tests COMMAND tests)

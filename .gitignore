@@ -1,8 +1,8 @@
 # West-managed upstream repos (pulled by `west update`)
-zephyr/
-modules/
-tools/
-bootloader/
+/zephyr/
+/modules/
+/tools/
+/bootloader/
 
 # West internal metadata
 .west/
