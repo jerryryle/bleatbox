@@ -162,7 +162,11 @@ static int cmd_accel(const struct shell *sh, size_t argc, char **argv)
         k_msleep(10);
     }
 
-    accel_odr_restore(prev_ctrl1);
+    ret = accel_odr_restore(prev_ctrl1);
+    if (ret) {
+        shell_error(sh, "Failed to restore ODR: %d", ret);
+        return ret;
+    }
     return 0;
 }
 

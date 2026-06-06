@@ -46,6 +46,10 @@ K_THREAD_DEFINE(audio_tid, AUDIO_STACK_SIZE,
 int audio_init(struct k_msgq *event_q)
 {
     g_event_q = event_q;
+    g_playing = false;
+    g_pending_path[0] = '\0';
+    g_pending_delay = 0;
+
     if (!device_is_ready(g_spi_dev)) {
         LOG_ERR("SPI device not ready");
         return -ENODEV;

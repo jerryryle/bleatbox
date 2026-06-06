@@ -53,7 +53,10 @@ int audio_set_volume(uint8_t percent);
  * Calling this while a sound is already playing is a no-op (the
  * call is logged and ignored).
  *
- * @param path      Filesystem path to the MP3 file.
+ * The path string is copied internally; the caller's buffer does
+ * not need to remain valid after this function returns.
+ *
+ * @param path      Filesystem path to the MP3 file (max 31 chars).
  * @param delay_ms  Milliseconds to wait before playback starts.
  *                  The delay runs on the audio thread; audio_is_playing()
  *                  returns true for the entire duration.
