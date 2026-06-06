@@ -56,6 +56,7 @@ Indentation is **4-wide spaces, not tabs**. Otherwise follow the [Zephyr coding 
 - Never use `goto` — extract helper functions instead
 - Prefer `for (;;)` over `while (1)`
 - All file-scope `static` variables are prefixed with `g_`, including `const` hardware descriptors
+- All file-scope `static` variables and Zephyr kernel object definitions (`K_SEM_DEFINE`, `K_THREAD_DEFINE`, etc.) must be collected near the top of the file, before any function definitions. Add forward declarations as needed. If this pushes globals far from the functions that use them, split the module.
 - Besides `g_`, no other type or storage prefixes should be used (no Hungarian notation)
 - Header guards: `#ifndef FILENAME_H_` / `#define FILENAME_H_` / `#endif /* FILENAME_H_ */`
 - Includes ordered: Zephyr headers, stdlib headers, local headers (blank line between groups)
