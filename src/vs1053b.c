@@ -146,11 +146,11 @@ static int vs_write_reg(uint8_t reg, uint16_t val)
 static int vs_read_reg(uint8_t reg, uint16_t *val)
 {
     /*
-         * Full-duplex transceive: send opcode + address + 2 dummy bytes,
-         * receive 2 garbage bytes + 2 data bytes simultaneously.  This is
-         * one atomic SPI transaction — the driver holds XCS low and the
-         * bus lock for the entire 4-byte exchange.
-         */
+     * Full-duplex transceive: send opcode + address + 2 dummy bytes,
+     * receive 2 garbage bytes + 2 data bytes simultaneously.  This is
+     * one atomic SPI transaction — the driver holds XCS low and the
+     * bus lock for the entire 4-byte exchange.
+     */
     uint8_t tx[4] = {VS_READ_OP, reg, 0x00, 0x00};
     uint8_t rx[4] = {0};
 
@@ -318,12 +318,12 @@ int vs1053b_init(const struct device *spi_dev)
     g_spi = spi_dev;
 
     /*
-         * The SPI driver auto-configures CS GPIOs listed in the
-         * controller's cs-gpios DT property, but XCS and XDCS come
-         * from spi_config.cs — which the driver toggles but never
-         * configures.  Set them up as outputs (inactive = deasserted)
-         * before any SPI transactions.
-         */
+     * The SPI driver auto-configures CS GPIOs listed in the
+     * controller's cs-gpios DT property, but XCS and XDCS come
+     * from spi_config.cs — which the driver toggles but never
+     * configures.  Set them up as outputs (inactive = deasserted)
+     * before any SPI transactions.
+     */
     int ret = gpio_pin_configure_dt(&g_vs_cmd_spi_cfg.cs.gpio,
                                     GPIO_OUTPUT_INACTIVE);
     if (ret < 0) {
@@ -353,9 +353,9 @@ int vs1053b_init(const struct device *spi_dev)
         return ret;
 
     /*
-         * SCI_CLOCKF = 0x8800: XTALI x 3.5 = 43 MHz internal clock.
-         * Allows faster SPI data transfers and reduces codec latency.
-         */
+     * SCI_CLOCKF = 0x8800: XTALI x 3.5 = 43 MHz internal clock.
+     * Allows faster SPI data transfers and reduces codec latency.
+     */
     ret = vs_write_reg(VS_REG_CLOCKF, 0x8800);
     if (ret)
         return ret;

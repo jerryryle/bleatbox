@@ -30,7 +30,7 @@ static int cmd_play(const struct shell *sh, size_t argc, char **argv)
 
     char *end;
     unsigned long idx = strtoul(argv[2], &end, 0);
-    if (end == argv[2]) {
+    if (end == argv[2] || idx > UINT8_MAX) {
         shell_error(sh, "Invalid index: %s", argv[2]);
         return -EINVAL;
     }
@@ -151,9 +151,11 @@ static int cmd_accel(const struct shell *sh, size_t argc, char **argv)
             break;
         }
 
-        int32_t x_mg = x.val1 * 1000 + x.val2 / 1000;
-        int32_t y_mg = y.val1 * 1000 + y.val2 / 1000;
-        int32_t z_mg = z.val1 * 1000 + z.val2 / 1000;
+        /* sensor_value is in m/s² (val1=integer, val2=micro-fractional).
+         * Convert to milli-g: mg = (m/s² * 1000000 + micro) / 9807 */
+        int32_t x_mg = ((int64_t)x.val1 * 1000000 + x.val2) / 9807;
+        int32_t y_mg = ((int64_t)y.val1 * 1000000 + y.val2) / 9807;
+        int32_t z_mg = ((int64_t)z.val1 * 1000000 + z.val2) / 9807;
 
         shell_print(sh, "X=%6d  Y=%6d  Z=%6d", x_mg, y_mg, z_mg);
 

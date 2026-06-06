@@ -2,7 +2,10 @@
     "configurations": [
         {
             "name": "Zephyr",
-            "compileCommands": "${workspaceFolder}/build/compile_commands.json",
+            "compileCommands": [
+                "${workspaceFolder}/build/compile_commands.json",
+                "${workspaceFolder}/build-tests/compile_commands.json"
+            ],
             "cStandard": "c11",
             "cppStandard": "c++17",
             "intelliSenseMode": "gcc-arm"

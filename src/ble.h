@@ -15,7 +15,7 @@
 #include "sounds.h"
 
 /** Maximum assignments that fit in one broadcast packet. */
-#define BLE_MAX_ASSIGNMENTS 59
+#define BLE_MAX_ASSIGNMENTS 30
 
 #define BLE_SOUND_TYPE_BIT  7
 #define BLE_SOUND_TYPE_MASK (1U << BLE_SOUND_TYPE_BIT)
