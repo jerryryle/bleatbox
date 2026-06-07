@@ -17,5 +17,8 @@ target_sources(app PRIVATE
     src/device_config.c
     src/device_config_parse.c
     src/sounds_match.c
+)
+
+target_sources_ifdef(CONFIG_SHELL app PRIVATE
     src/shell.c
 )
