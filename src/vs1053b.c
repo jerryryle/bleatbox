@@ -22,21 +22,33 @@ LOG_MODULE_REGISTER(vs1053b, LOG_LEVEL_INF);
 /* Registers and constants                                            */
 /* ------------------------------------------------------------------ */
 
-#define VS_WRITE_OP 0x02
-#define VS_READ_OP 0x03
+#define VS_WRITE_OP         0x02
+#define VS_READ_OP          0x03
 
-#define VS_REG_MODE 0x00
-#define VS_REG_STATUS 0x01
-#define VS_REG_CLOCKF 0x03
-#define VS_REG_AUDATA 0x05
-#define VS_REG_WRAM 0x06
-#define VS_REG_WRAMADDR 0x07
-#define VS_REG_VOL 0x0B
+#define VS_REG_MODE         0x00
+#define VS_REG_STATUS       0x01
+#define VS_REG_BASS         0x02
+#define VS_REG_CLOCKF       0x03
+#define VS_REG_DECODE_TIME  0x04
+#define VS_REG_AUDATA       0x05
+#define VS_REG_WRAM         0x06
+#define VS_REG_WRAMADDR     0x07
+#define VS_REG_HDAT0        0x08
+#define VS_REG_HDAT1        0x09
+#define VS_REG_AIADDR       0x0A
+#define VS_REG_VOL          0x0B
+#define VS_REG_AICTRL0      0x0C
+#define VS_REG_AICTRL1      0x0D
+#define VS_REG_AICTRL2      0x0E
+#define VS_REG_AICTRL3      0x0F
 
-#define VS_SM_RESET BIT(2)
-#define VS_SM_CANCEL BIT(3)
-#define VS_SM_TESTS BIT(5)
-#define VS_SM_SDINEW BIT(11)
+#define VS_MODE_RESET       BIT(2)
+#define VS_MODE_CANCEL      BIT(3)
+#define VS_MODE_TESTS       BIT(5)
+#define VS_MODE_SDINEW      BIT(11)
+
+#define VS_STATUS_APDOWN1   BIT(2)
+#define VS_STATUS_APDOWN2   BIT(3)
 
 /*
  * DREQ timeout: the VS1053B deasserts DREQ while its FIFO is full
@@ -239,7 +251,7 @@ int vs1053b_sine_test(bool enable)
     int ret;
 
     if (enable) {
-        ret = vs_write_reg(VS_REG_MODE, VS_SM_SDINEW | VS_SM_TESTS);
+        ret = vs_write_reg(VS_REG_MODE, VS_MODE_SDINEW | VS_MODE_TESTS);
         if (ret)
             return ret;
         k_msleep(1);
@@ -272,7 +284,7 @@ int vs1053b_sine_test(bool enable)
             return ret;
         k_msleep(1);
 
-        ret = vs_write_reg(VS_REG_MODE, VS_SM_SDINEW);
+        ret = vs_write_reg(VS_REG_MODE, VS_MODE_SDINEW);
     }
     return ret;
 }
@@ -285,7 +297,7 @@ int vs1053b_end_playback(void)
         return ret;
     }
 
-    ret = vs_write_reg(VS_REG_MODE, mode | VS_SM_CANCEL);
+    ret = vs_write_reg(VS_REG_MODE, mode | VS_MODE_CANCEL);
     if (ret) {
         return ret;
     }
@@ -304,13 +316,13 @@ int vs1053b_end_playback(void)
         if (ret) {
             break;
         }
-        if (!(mode & VS_SM_CANCEL)) {
+        if (!(mode & VS_MODE_CANCEL)) {
             return 0;
         }
     }
 
     /* SM_CANCEL didn't clear — do a hard soft-reset as fallback */
-    ret = vs_write_reg(VS_REG_MODE, VS_SM_SDINEW | VS_SM_RESET);
+    ret = vs_write_reg(VS_REG_MODE, VS_MODE_SDINEW | VS_MODE_RESET);
     if (ret) {
         return ret;
     }
@@ -393,31 +405,36 @@ int vs1053b_init(const struct device *spi_dev)
         return ret;
     }
 
-    ret = vs_write_reg(VS_REG_MODE, VS_SM_SDINEW | VS_SM_RESET);
-    if (ret)
+    ret = vs_write_reg(VS_REG_MODE, VS_MODE_SDINEW | VS_MODE_RESET);
+    if (ret) {
         return ret;
+    }
     k_msleep(5);
     ret = vs_wait_dreq();
-    if (ret)
+    if (ret) {
         return ret;
+    }
 
     /*
      * SCI_CLOCKF = 0x8800: XTALI x 3.5 = 43 MHz internal clock.
      * Allows faster SPI data transfers and reduces codec latency.
      */
     ret = vs_write_reg(VS_REG_CLOCKF, 0x8800);
-    if (ret)
+    if (ret) {
         return ret;
+    }
     k_msleep(2);
 
     ret = vs1053b_set_volume(80);
-    if (ret)
+    if (ret) {
         return ret;
+    }
 
     uint16_t status;
     ret = vs_read_reg(VS_REG_STATUS, &status);
-    if (ret)
+    if (ret) {
         return ret;
+    }
 
     LOG_INF("VS1053B status: 0x%04x", status);
     return 0;
