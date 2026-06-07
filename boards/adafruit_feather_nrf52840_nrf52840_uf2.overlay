@@ -9,6 +9,10 @@
  *   D9  = P0.26  ->  VS1053B DREQ (data request, active high)
  *   D10 = P0.27  ->  VS1053B XDCS (SDI data chip select)
  *   A0  = P0.04  ->  LIS2DW12 INT1 (wakeup interrupt)
+ *   A1  = P0.05  ->  VS1053B XRESET (hardware reset, active low).
+ *                    Requires the FeatherWing RST jumper cut and the
+ *                    rst pad wired to A1; lets firmware hold the codec
+ *                    in reset (~12 uA) when idle.
  *
  *   SPI bus (feather header):
  *     SCK  = P0.14
@@ -30,11 +34,13 @@
 	 * XCS and XDCS are SPI chip selects managed via spi_cs_control
 	 * (not gpio-leds) so the SPI driver handles bus locking atomically.
 	 * DREQ is a pure input — polled to gate SPI transfers.
+	 * XRESET (active low) holds the codec in hardware reset when idle.
 	 */
 	zephyr,user {
 		vs1053b-xcs-gpios = <&gpio0 7 GPIO_ACTIVE_LOW>;
 		vs1053b-xdcs-gpios = <&gpio0 27 GPIO_ACTIVE_LOW>;
 		vs1053b-dreq-gpios = <&gpio0 26 GPIO_ACTIVE_HIGH>;
+		vs1053b-reset-gpios = <&gpio0 5 GPIO_ACTIVE_LOW>;
 	};
 };
 

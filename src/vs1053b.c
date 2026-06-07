@@ -69,6 +69,15 @@ static const struct gpio_dt_spec g_vs_dreq =
     GPIO_DT_SPEC_GET(ZUSER, vs1053b_dreq_gpios);
 
 /*
+ * XRESET (active low).  Asserted to hold the codec in hardware reset
+ * (~12 uA) while idle; released and reconfigured before playback.
+ * Requires the FeatherWing RST jumper cut and wired to this pin — if
+ * unmodified, the pin is unconnected and toggling it has no effect.
+ */
+static const struct gpio_dt_spec g_vs_reset =
+    GPIO_DT_SPEC_GET(ZUSER, vs1053b_reset_gpios);
+
+/*
  * VS1053B SPI configs with embedded chip-select control.
  *
  * The CS GPIO spec lives inside spi_config.cs (a struct value, not a
@@ -107,6 +116,13 @@ static const struct device *g_spi;
 
 /* Last volume set via vs1053b_set_volume(), restored on power-up. */
 static uint16_t g_vol_reg;
+
+/*
+ * True while the codec is held in hardware reset (idle).  SCI registers
+ * are inaccessible in this state, so volume get/set fall back to the
+ * cached g_vol_reg and defer the hardware write until power-up.
+ */
+static bool g_in_reset;
 
 
 /* ------------------------------------------------------------------ */
@@ -190,16 +206,63 @@ static int vs_read_reg(uint8_t reg, uint16_t *val)
     return 0;
 }
 
+/* Map a 0–100 volume percentage to an SCI_VOL register value. */
+static uint16_t vol_percent_to_reg(uint8_t percent)
+{
+    if (percent > 100) {
+        percent = 100;
+    }
+
+    /* 0x00 = max, 0xFE = silence.  Map 100 → 0x00, 0 → 0xFE. */
+    uint8_t att = (uint8_t)((uint16_t)(100 - percent) * 254 / 100);
+    return ((uint16_t)att << 8) | att;
+}
+
+/*
+ * Bring the codec from a reset state to a ready-to-play state: soft
+ * reset, boost the internal clock, and load the cached volume.  Used by
+ * both vs1053b_init() and vs1053b_power_up() — after a hardware reset
+ * all SCI registers are at their defaults and must be reprogrammed.
+ */
+static int vs_configure(void)
+{
+    int ret = vs_write_reg(VS_REG_MODE, VS_MODE_SDINEW | VS_MODE_RESET);
+    if (ret) {
+        return ret;
+    }
+    k_msleep(5);
+    ret = vs_wait_dreq();
+    if (ret) {
+        return ret;
+    }
+
+    /*
+     * SCI_CLOCKF = 0x8800: XTALI x 3.5 = 43 MHz internal clock.
+     * Allows faster SPI data transfers and reduces codec latency.
+     */
+    ret = vs_write_reg(VS_REG_CLOCKF, 0x8800);
+    if (ret) {
+        return ret;
+    }
+    k_msleep(2);
+
+    return vs_write_reg(VS_REG_VOL, g_vol_reg);
+}
+
 /* ------------------------------------------------------------------ */
 /* Public API                                                         */
 /* ------------------------------------------------------------------ */
 
 int vs1053b_get_volume(uint8_t *percent)
 {
-    uint16_t reg;
-    int ret = vs_read_reg(VS_REG_VOL, &reg);
-    if (ret) {
-        return ret;
+    /* In reset the SCI register is unreadable — report the cache. */
+    uint16_t reg = g_vol_reg;
+
+    if (!g_in_reset) {
+        int ret = vs_read_reg(VS_REG_VOL, &reg);
+        if (ret) {
+            return ret;
+        }
     }
 
     /* Use left channel (high byte). 0x00 = max, 0xFE = silence. */
@@ -214,13 +277,13 @@ int vs1053b_get_volume(uint8_t *percent)
 
 int vs1053b_set_volume(uint8_t percent)
 {
-    if (percent > 100) {
-        percent = 100;
-    }
+    g_vol_reg = vol_percent_to_reg(percent);
 
-    /* 0x00 = max, 0xFE = silence.  Map 100 → 0x00, 0 → 0xFE. */
-    uint8_t att = (uint8_t)((uint16_t)(100 - percent) * 254 / 100);
-    g_vol_reg = ((uint16_t)att << 8) | att;
+    /* In reset the SCI write would hang on DREQ; the cached value is
+     * applied by vs_configure() on the next power-up. */
+    if (g_in_reset) {
+        return 0;
+    }
 
     return vs_write_reg(VS_REG_VOL, g_vol_reg);
 }
@@ -332,51 +395,54 @@ int vs1053b_end_playback(void)
 
 int vs1053b_power_down(void)
 {
-    /* Silence analog outputs to avoid pop */
+    if (g_in_reset) {
+        return 0;
+    }
+
+    /* Silence analog outputs first to avoid a pop when reset asserts. */
     int ret = vs_write_reg(VS_REG_VOL, 0xFFFF);
     if (ret) {
         return ret;
     }
 
-    /* Lower sample rate to reduce audio interrupt overhead */
-    ret = vs_write_reg(VS_REG_AUDATA, 0x0010);
+    /* Assert hardware reset — drops the codec to ~12 uA. */
+    ret = gpio_pin_set_dt(&g_vs_reset, 1);
     if (ret) {
+        LOG_ERR("Failed to assert reset: %d", ret);
         return ret;
     }
+    g_in_reset = true;
 
-    /* Disable PLL — drop to 1.0× crystal clock */
-    ret = vs_write_reg(VS_REG_CLOCKF, 0x0000);
-    if (ret) {
-        return ret;
-    }
-
-    LOG_INF("VS1053B low-power mode entered");
+    LOG_INF("VS1053B held in hardware reset");
     return 0;
 }
 
 int vs1053b_power_up(void)
 {
-    /* Restore PLL (3.5× crystal = 43 MHz internal clock) */
-    int ret = vs_write_reg(VS_REG_CLOCKF, 0x8800);
+    /* Release hardware reset and let the codec's oscillator start. */
+    int ret = gpio_pin_set_dt(&g_vs_reset, 0);
     if (ret) {
+        LOG_ERR("Failed to release reset: %d", ret);
         return ret;
     }
     k_msleep(2);
+    g_in_reset = false;
 
-    /* Restore volume */
-    ret = vs_write_reg(VS_REG_VOL, g_vol_reg);
+    /* Hardware reset cleared all SCI registers — reconfigure. */
+    ret = vs_configure();
     if (ret) {
         return ret;
     }
 
-    LOG_INF("VS1053B woke from low-power mode");
+    LOG_INF("VS1053B released from reset and reconfigured");
     return 0;
 }
 
 int vs1053b_init(const struct device *spi_dev)
 {
     g_spi = spi_dev;
-    g_vol_reg = 0;
+    g_vol_reg = vol_percent_to_reg(80);
+    g_in_reset = true;
 
     /*
      * The SPI driver auto-configures CS GPIOs listed in the
@@ -405,37 +471,17 @@ int vs1053b_init(const struct device *spi_dev)
         return ret;
     }
 
-    ret = vs_write_reg(VS_REG_MODE, VS_MODE_SDINEW | VS_MODE_RESET);
-    if (ret) {
-        return ret;
-    }
-    k_msleep(5);
-    ret = vs_wait_dreq();
-    if (ret) {
-        return ret;
-    }
-
     /*
-     * SCI_CLOCKF = 0x8800: XTALI x 3.5 = 43 MHz internal clock.
-     * Allows faster SPI data transfers and reduces codec latency.
+     * Hold the codec in hardware reset (active = asserted) from boot.
+     * It stays at ~12 uA until the first playback; vs1053b_power_up()
+     * releases and configures it on demand.
      */
-    ret = vs_write_reg(VS_REG_CLOCKF, 0x8800);
-    if (ret) {
-        return ret;
-    }
-    k_msleep(2);
-
-    ret = vs1053b_set_volume(80);
-    if (ret) {
+    ret = gpio_pin_configure_dt(&g_vs_reset, GPIO_OUTPUT_ACTIVE);
+    if (ret < 0) {
+        LOG_ERR("Failed to configure reset: %d", ret);
         return ret;
     }
 
-    uint16_t status;
-    ret = vs_read_reg(VS_REG_STATUS, &status);
-    if (ret) {
-        return ret;
-    }
-
-    LOG_INF("VS1053B status: 0x%04x", status);
+    LOG_INF("VS1053B initialized (held in reset)");
     return 0;
 }

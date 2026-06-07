@@ -12,8 +12,11 @@
 #include <stddef.h>
 
 /**
- * Initialize the VS1053B: configure DREQ GPIO, hardware reset,
- * boost internal clock, and set default volume.
+ * Initialize the VS1053B GPIOs and hold the codec in hardware reset.
+ *
+ * Does not configure the codec — it stays at ~12 uA until the first
+ * vs1053b_power_up(), which releases reset and programs it.  The
+ * default volume is cached and applied on that first power-up.
  *
  * @param spi_dev  The SPI device shared with the SD card.
  * @return 0 on success, negative errno on failure.
@@ -62,17 +65,22 @@ int vs1053b_write_reg(uint8_t reg, uint16_t val);
 int vs1053b_sine_test(bool enable);
 
 /**
- * Enter low-power mode: disable PLL, silence analog outputs,
- * lower sample rate.  Saves ~50% idle power.  Register state is
- * preserved internally; call vs1053b_power_up() to restore.
+ * Enter low-power mode: mute the analog outputs, then assert the
+ * codec's hardware reset, dropping it to ~12 uA.  All SCI register
+ * state is lost; vs1053b_power_up() reconfigures the codec.
+ *
+ * Requires the FeatherWing RST jumper cut and wired to the reset GPIO.
+ * On an unmodified board the pin is unconnected and the codec stays in
+ * its clocked idle state.
  *
  * @return 0 on success, negative errno on failure.
  */
 int vs1053b_power_down(void);
 
 /**
- * Exit low-power mode: restore PLL and volume.  Takes ~2 ms
- * for the PLL to relock.
+ * Exit low-power mode: release the hardware reset and fully reconfigure
+ * the codec (clock boost and cached volume), since reset cleared all
+ * registers.  Takes a few ms for the oscillator to start.
  *
  * @return 0 on success, negative errno on failure.
  */
