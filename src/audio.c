@@ -63,10 +63,9 @@ int audio_init(struct k_msgq *event_q)
         return ret;
     }
 
-    /* Enter low-power mode until the first playback request.
-     * audio_set_volume() can still be called — it updates the cached
-     * register value that vs1053b_power_up() will restore. */
-    vs1053b_power_down();
+    /* vs1053b_init() leaves the codec in hardware reset (~12 uA) until
+     * the first playback.  audio_set_volume() can still be called — it
+     * caches the value that vs1053b_power_up() applies on wake. */
 
     LOG_INF("Audio initialized");
     return 0;
