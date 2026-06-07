@@ -74,12 +74,12 @@ static struct k_work g_relay_work;
 static K_MUTEX_DEFINE(g_tx_mutex);
 
 /*
- * Scan parameters — continuous scanning (window == interval) for
- * lowest detection latency.  Defined here so ble_advertise_assignments
- * can restart scanning after the advertising burst.
+ * Scan parameters — 100 ms window inside a 160 ms interval (~62%
+ * duty cycle).  The advertising burst is 5 events over ~150 ms, so
+ * a 100 ms window reliably catches at least one event per burst.
  */
-#define SCAN_INTERVAL 0x0030
-#define SCAN_WINDOW 0x0030
+#define SCAN_INTERVAL 0x0100 /* 256 × 0.625 ms = 160 ms */
+#define SCAN_WINDOW   0x00A0 /* 160 × 0.625 ms = 100 ms */
 
 static const struct bt_le_scan_param g_scan_params = {
     .type = BT_LE_SCAN_TYPE_PASSIVE,

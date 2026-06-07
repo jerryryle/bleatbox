@@ -62,6 +62,23 @@ int vs1053b_write_reg(uint8_t reg, uint16_t val);
 int vs1053b_sine_test(bool enable);
 
 /**
+ * Enter low-power mode: disable PLL, silence analog outputs,
+ * lower sample rate.  Saves ~50% idle power.  Register state is
+ * preserved internally; call vs1053b_power_up() to restore.
+ *
+ * @return 0 on success, negative errno on failure.
+ */
+int vs1053b_power_down(void);
+
+/**
+ * Exit low-power mode: restore PLL and volume.  Takes ~2 ms
+ * for the PLL to relock.
+ *
+ * @return 0 on success, negative errno on failure.
+ */
+int vs1053b_power_up(void);
+
+/**
  * Finish playback and reset the codec for the next file.
  *
  * Must be called after the last audio data is sent.  Sends endFillByte
