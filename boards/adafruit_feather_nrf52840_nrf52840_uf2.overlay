@@ -38,6 +38,10 @@
 	};
 };
 
+&uart0 {
+	status = "disabled";
+};
+
 &i2c0 {
 	lis2dw12: lis2dw12@19 {
 		compatible = "st,lis2dw12";

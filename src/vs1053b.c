@@ -28,6 +28,7 @@ LOG_MODULE_REGISTER(vs1053b, LOG_LEVEL_INF);
 #define VS_REG_MODE 0x00
 #define VS_REG_STATUS 0x01
 #define VS_REG_CLOCKF 0x03
+#define VS_REG_AUDATA 0x05
 #define VS_REG_WRAM 0x06
 #define VS_REG_WRAMADDR 0x07
 #define VS_REG_VOL 0x0B
@@ -91,6 +92,10 @@ static const struct spi_config g_vs_data_spi_cfg = {
 
 /* Cached SPI device pointer, set during init. */
 static const struct device *g_spi;
+
+/* Last volume set via vs1053b_set_volume(), restored on power-up. */
+static uint16_t g_vol_reg;
+
 
 /* ------------------------------------------------------------------ */
 /* Internal helpers                                                   */
@@ -203,9 +208,9 @@ int vs1053b_set_volume(uint8_t percent)
 
     /* 0x00 = max, 0xFE = silence.  Map 100 → 0x00, 0 → 0xFE. */
     uint8_t att = (uint8_t)((uint16_t)(100 - percent) * 254 / 100);
-    uint16_t vol = ((uint16_t)att << 8) | att;
+    g_vol_reg = ((uint16_t)att << 8) | att;
 
-    return vs_write_reg(VS_REG_VOL, vol);
+    return vs_write_reg(VS_REG_VOL, g_vol_reg);
 }
 
 int vs1053b_write_data(const uint8_t *data, size_t len)
@@ -313,9 +318,53 @@ int vs1053b_end_playback(void)
     return vs_wait_dreq();
 }
 
+int vs1053b_power_down(void)
+{
+    /* Silence analog outputs to avoid pop */
+    int ret = vs_write_reg(VS_REG_VOL, 0xFFFF);
+    if (ret) {
+        return ret;
+    }
+
+    /* Lower sample rate to reduce audio interrupt overhead */
+    ret = vs_write_reg(VS_REG_AUDATA, 0x0010);
+    if (ret) {
+        return ret;
+    }
+
+    /* Disable PLL — drop to 1.0× crystal clock */
+    ret = vs_write_reg(VS_REG_CLOCKF, 0x0000);
+    if (ret) {
+        return ret;
+    }
+
+    LOG_INF("VS1053B low-power mode entered");
+    return 0;
+}
+
+int vs1053b_power_up(void)
+{
+    /* Restore PLL (3.5× crystal = 43 MHz internal clock) */
+    int ret = vs_write_reg(VS_REG_CLOCKF, 0x8800);
+    if (ret) {
+        return ret;
+    }
+    k_msleep(2);
+
+    /* Restore volume */
+    ret = vs_write_reg(VS_REG_VOL, g_vol_reg);
+    if (ret) {
+        return ret;
+    }
+
+    LOG_INF("VS1053B woke from low-power mode");
+    return 0;
+}
+
 int vs1053b_init(const struct device *spi_dev)
 {
     g_spi = spi_dev;
+    g_vol_reg = 0;
 
     /*
      * The SPI driver auto-configures CS GPIOs listed in the

@@ -51,7 +51,6 @@ int audio_init(struct k_msgq *event_q)
 {
     g_event_q = event_q;
     g_playing = false;
-    k_msgq_purge(&g_play_q);
 
     if (!device_is_ready(g_spi_dev)) {
         LOG_ERR("SPI device not ready");
@@ -63,6 +62,11 @@ int audio_init(struct k_msgq *event_q)
         LOG_ERR("VS1053B init failed: %d", ret);
         return ret;
     }
+
+    /* Enter low-power mode until the first playback request.
+     * audio_set_volume() can still be called — it updates the cached
+     * register value that vs1053b_power_up() will restore. */
+    vs1053b_power_down();
 
     LOG_INF("Audio initialized");
     return 0;
@@ -154,9 +158,13 @@ static void playback_thread(void *p1, void *p2, void *p3)
 
     for (;;) {
         struct play_request req;
-        k_msgq_get(&g_play_q, &req, K_FOREVER);
+        if (k_msgq_get(&g_play_q, &req, K_FOREVER)) {
+            continue;
+        }
+        LOG_INF("Received playback request: path=%s delay=%u ms", req.path, req.delay_ms);
 
         if (req.delay_ms > 0) {
+            LOG_INF("Delaying playback for %u ms", req.delay_ms);
             k_msleep(req.delay_ms);
         }
 
@@ -170,6 +178,7 @@ static void playback_thread(void *p1, void *p2, void *p3)
         }
 
         LOG_INF("Playing %s", req.path);
+        vs1053b_power_up();
 
         uint8_t buf[VS1053B_DATA_CHUNK];
         ssize_t nread;
@@ -183,6 +192,7 @@ static void playback_thread(void *p1, void *p2, void *p3)
 
         fs_close(&f);
         vs1053b_end_playback();
+        vs1053b_power_down();
         g_playing = false;
         LOG_INF("Playback finished");
 
