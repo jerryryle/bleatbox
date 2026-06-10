@@ -29,6 +29,15 @@ static const struct i2c_dt_spec g_i2c_spec =
 
 static struct k_msgq *g_evt_q;
 
+/*
+ * The sensor API stores this pointer (the LIS2DW12 driver hands it
+ * back on every interrupt), so it must outlive accel_init().
+ */
+static const struct sensor_trigger g_motion_trigger = {
+    .type = SENSOR_TRIG_MOTION,
+    .chan = SENSOR_CHAN_ACCEL_XYZ,
+};
+
 static void accel_trigger_handler(const struct device *dev,
                                   const struct sensor_trigger *trig)
 {
@@ -61,12 +70,8 @@ int accel_init(struct k_msgq *event_q, uint16_t threshold_mg)
     }
 
     /* Register wakeup trigger */
-    struct sensor_trigger trig = {
-        .type = SENSOR_TRIG_MOTION,
-        .chan = SENSOR_CHAN_ACCEL_XYZ,
-    };
-
-    ret = sensor_trigger_set(g_accel_dev, &trig, accel_trigger_handler);
+    ret = sensor_trigger_set(g_accel_dev, &g_motion_trigger,
+                             accel_trigger_handler);
     if (ret) {
         LOG_ERR("Failed to set trigger: %d", ret);
         return ret;

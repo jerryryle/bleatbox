@@ -71,29 +71,27 @@ int sounds_scan(void)
     fs_closedir(&dir);
 
     g_goat_count = sounds_validate_set(goat_present, goat_max);
-    if (g_goat_count == 0 && misc_max >= 0) {
+    if (g_goat_count == 0) {
         for (int i = 0; i <= goat_max; i++) {
             if (!goat_present[i]) {
-                LOG_ERR("Missing sound file: goat%02u.mp3", i);
+                LOG_ERR("Missing sound file: goat%02d.mp3", i);
             }
         }
         LOG_ERR("No goat sounds found on SD card (or missing sounds encountered)");
         return -ENOENT;
-    } else if (g_goat_count > 0) {
-        LOG_INF("Found sounds goat00-goat%02u (%u total)",
-                goat_max, g_goat_count);
     }
+    LOG_INF("Found sounds goat00-goat%02d (%u total)", goat_max, g_goat_count);
 
     g_misc_count = sounds_validate_set(misc_present, misc_max);
     if (g_misc_count == 0 && misc_max >= 0) {
         for (int i = 0; i <= misc_max; i++) {
             if (!misc_present[i]) {
-                LOG_WRN("Missing sound file: misc%02u.mp3", i);
+                LOG_WRN("Missing sound file: misc%02d.mp3", i);
             }
         }
         LOG_WRN("No misc sounds found on SD card (or missing sounds encountered)");
     } else if (g_misc_count > 0) {
-        LOG_INF("Found sounds misc00-misc%02u (%u total)",
+        LOG_INF("Found sounds misc00-misc%02d (%u total)",
                 misc_max, g_misc_count);
     }
 

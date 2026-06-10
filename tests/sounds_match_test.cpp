@@ -15,10 +15,13 @@ TEST(TryMatch, ValidGoatTwoDigits)
     EXPECT_EQ(sounds_try_match(name, strrchr(name, '.'), "goat", 4), 5);
 }
 
-TEST(TryMatch, ValidGoatSingleDigit)
+TEST(TryMatch, SingleDigitRejected)
 {
+    /* sounds_get_path() generates zero-padded names ("goat09.mp3"),
+     * so non-padded files must be rejected at scan time rather than
+     * failing to open at playback time. */
     const char *name = "goat9.mp3";
-    EXPECT_EQ(sounds_try_match(name, strrchr(name, '.'), "goat", 4), 9);
+    EXPECT_EQ(sounds_try_match(name, strrchr(name, '.'), "goat", 4), -1);
 }
 
 TEST(TryMatch, ValidMisc)

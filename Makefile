@@ -5,7 +5,7 @@ ACTIVATE := . $(VENV)/bin/activate
 
 BOARD ?= adafruit_feather_nrf52840/nrf52840/uf2
 
-.PHONY: build clean test
+.PHONY: build clean test flash
 
 build: test
 	$(ACTIVATE) && west build -b $(BOARD)
