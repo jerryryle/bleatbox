@@ -399,10 +399,12 @@ int vs1053b_power_down(void)
         return 0;
     }
 
-    /* Silence analog outputs first to avoid a pop when reset asserts. */
+    /* Silence analog outputs first to avoid a pop when reset asserts.
+     * Best effort — even if the codec is unresponsive, still assert
+     * reset below so it doesn't sit at full power. */
     int ret = vs_write_reg(VS_REG_VOL, 0xFFFF);
     if (ret) {
-        return ret;
+        LOG_WRN("Mute before reset failed: %d", ret);
     }
 
     /* Assert hardware reset — drops the codec to ~12 uA. */

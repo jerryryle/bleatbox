@@ -21,8 +21,8 @@
  * Initialize Bluetooth: enable the stack, create the extended
  * advertising set, register the scan callback, and start scanning.
  *
- * @param device_id  This device's FICR-derived ID (used to recognize
- *                   our entry in received broadcasts).
+ * @param device_id  This device's ID from the SD-card config (used to
+ *                    recognize our entry in received broadcasts).
  * @param event_q    Message queue to push EVENT_BLE_RX events into.
  * @param relay_ttl  Maximum relay hops.  0 disables relaying.
  * @return 0 on success, negative errno on failure.

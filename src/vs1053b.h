@@ -24,13 +24,24 @@
 int vs1053b_init(const struct device *spi_dev);
 
 /**
- * Set playback volume on both channels.
+ * Get the current playback volume.
  *
- * @param percent  0 (silent) to 100 (maximum).
+ * While the codec is held in reset this reports the cached value.
+ *
+ * @param[out] percent  0 (silent) to 100 (maximum).
  * @return 0 on success, negative errno on failure.
  */
 int vs1053b_get_volume(uint8_t *percent);
 
+/**
+ * Set playback volume on both channels.
+ *
+ * While the codec is held in reset the value is cached and applied
+ * on the next vs1053b_power_up().
+ *
+ * @param percent  0 (silent) to 100 (maximum).
+ * @return 0 on success, negative errno on failure.
+ */
 int vs1053b_set_volume(uint8_t percent);
 
 /**

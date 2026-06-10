@@ -49,18 +49,11 @@ int device_config_load(struct device_config *cfg)
             }
             pos = 0;
         } else if (pos >= LINE_MAX - 2) {
-            buf[pos + 1] = '\0';
-            ret = device_config_parse_line(buf, cfg, &has_id);
-            if (ret) {
-                LOG_ERR("Config parse error (%d): %s", ret, buf);
-                fs_close(&file);
-                return ret;
-            }
-            pos = 0;
-            /* Drain the rest of this overlong line */
-            char ch;
-            while (fs_read(&file, &ch, 1) == 1 && ch != '\n') {
-            }
+            /* Truncating and parsing the prefix could silently yield a
+             * plausible-but-wrong value — reject the file instead. */
+            LOG_ERR("Config line too long (max %d chars)", LINE_MAX - 2);
+            fs_close(&file);
+            return -EINVAL;
         } else {
             pos++;
         }

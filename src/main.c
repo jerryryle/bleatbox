@@ -84,6 +84,16 @@ static void handle_vibration(void)
         return;
     }
 
+    /*
+     * A playing sound (e.g. a BLE-assigned one) shakes the enclosure;
+     * don't broadcast assignments for vibration we likely caused
+     * ourselves while our own playback request would be discarded.
+     */
+    if (audio_is_playing()) {
+        LOG_INF("Vibration dropped — sound already playing");
+        return;
+    }
+
     char path[32];
     int ret = sounds_get_path(SOUND_TYPE_GOAT, VIBRATION_SOUND_INDEX,
                               path, sizeof(path));

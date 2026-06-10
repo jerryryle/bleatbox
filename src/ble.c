@@ -67,11 +67,33 @@ static volatile bool g_adv_active;
 #define MFG_DATA_MAX_SIZE (HEADER_SIZE + BLE_MAX_ASSIGNMENTS * ASSIGNMENT_ENTRY_SIZE)
 static uint8_t g_mfg_data[MFG_DATA_MAX_SIZE];
 
+/*
+ * Relay buffer — written by the scan callback (BT RX workqueue),
+ * consumed by the relay work item.  Guarded by g_relay_lock, NOT
+ * g_tx_mutex: the mutex is held across blocking HCI commands, and the
+ * scan callback must never wait behind those or it would stall the
+ * host's event processing.
+ */
+static struct k_spinlock g_relay_lock;
 static uint8_t g_relay_buf[MFG_DATA_MAX_SIZE];
 static uint8_t g_relay_len;
 static uint8_t g_relay_new_ttl;
-static struct k_work g_relay_work;
+
+/* Serializes the transmit paths (local broadcast, relay, scan resume). */
 static K_MUTEX_DEFINE(g_tx_mutex);
+
+/*
+ * Dedicated workqueue for relay and scan-resume work.  Both issue
+ * blocking HCI commands and may wait on g_tx_mutex — running them on
+ * the system workqueue would stall unrelated work items, and the BT
+ * RX workqueue (where the callbacks fire) must stay unblocked.
+ */
+#define TX_WORK_Q_STACK_SIZE 2048
+#define TX_WORK_Q_PRIORITY 7
+static K_THREAD_STACK_DEFINE(g_tx_work_q_stack, TX_WORK_Q_STACK_SIZE);
+static struct k_work_q g_tx_work_q;
+static struct k_work g_relay_work;
+static struct k_work g_resume_scan_work;
 
 /*
  * Scan parameters — 100 ms window inside a 160 ms interval (~62%
@@ -109,12 +131,30 @@ static void adv_sent_cb(struct bt_le_ext_adv *adv,
 {
     ARG_UNUSED(adv);
     g_adv_active = false;
-    LOG_INF("BLE advertising done (%u events), resuming scan",
-            info->num_sent);
-    int ret = bt_le_scan_start(&g_scan_params, NULL);
-    if (ret) {
-        LOG_ERR("Failed to restart scanning: %d", ret);
+    LOG_INF("BLE advertising done (%u events)", info->num_sent);
+
+    /* Fires on the BT RX workqueue — defer the blocking scan restart. */
+    k_work_submit_to_queue(&g_tx_work_q, &g_resume_scan_work);
+}
+
+static void resume_scan_work_handler(struct k_work *work)
+{
+    ARG_UNUSED(work);
+
+    k_mutex_lock(&g_tx_mutex, K_FOREVER);
+
+    /* A relay may have started another burst since the sent event —
+     * its own completion will resume scanning. */
+    if (!g_adv_active) {
+        int ret = bt_le_scan_start(&g_scan_params, NULL);
+        if (ret && ret != -EALREADY) {
+            LOG_ERR("Failed to restart scanning: %d", ret);
+        } else {
+            LOG_INF("BLE scan resumed");
+        }
     }
+
+    k_mutex_unlock(&g_tx_mutex);
 }
 
 static int start_advertising(uint8_t mfg_data_size)
@@ -164,6 +204,21 @@ int ble_advertise_assignments(const struct assignment *assignments,
     }
 
     k_mutex_lock(&g_tx_mutex, K_FOREVER);
+
+    /*
+     * A relay burst may be in flight.  The local broadcast carries
+     * fresh assignments and takes priority — stop the relay (which is
+     * best-effort) rather than failing with -EALREADY.
+     */
+    if (g_adv_active) {
+        int err = bt_le_ext_adv_stop(g_adv_set);
+        if (err) {
+            LOG_WRN("Failed to stop in-flight adv: %d", err);
+        } else {
+            LOG_INF("Preempted in-flight relay broadcast");
+            g_adv_active = false;
+        }
+    }
 
     uint8_t seq = g_seq++;
 
@@ -218,13 +273,19 @@ static void relay_work_handler(struct k_work *work)
         return;
     }
 
-    memcpy(g_mfg_data, g_relay_buf, g_relay_len);
-    g_mfg_data[HDR_OFF_TTL] = g_relay_new_ttl;
-    LOG_INF("Relaying: originator=0x%02x seq=%u ttl=%u",
-            g_relay_buf[HDR_OFF_ORIGINATOR], g_relay_buf[HDR_OFF_SEQ],
-            g_relay_new_ttl);
+    k_spinlock_key_t key = k_spin_lock(&g_relay_lock);
+    uint8_t len = g_relay_len;
+    uint8_t originator = g_relay_buf[HDR_OFF_ORIGINATOR];
+    uint8_t seq = g_relay_buf[HDR_OFF_SEQ];
+    uint8_t ttl = g_relay_new_ttl;
+    memcpy(g_mfg_data, g_relay_buf, len);
+    g_mfg_data[HDR_OFF_TTL] = ttl;
+    k_spin_unlock(&g_relay_lock, key);
 
-    int ret = start_advertising(g_relay_len);
+    LOG_INF("Relaying: originator=0x%02x seq=%u ttl=%u",
+            originator, seq, ttl);
+
+    int ret = start_advertising(len);
     k_mutex_unlock(&g_tx_mutex);
 
     if (ret) {
@@ -240,13 +301,14 @@ static void schedule_relay(const uint8_t *data, uint8_t data_len, uint8_t ttl)
         return;
     }
 
-    k_mutex_lock(&g_tx_mutex, K_FOREVER);
+    /* Runs in the scan callback (BT RX workqueue) — must not block. */
+    k_spinlock_key_t key = k_spin_lock(&g_relay_lock);
     memcpy(g_relay_buf, data, data_len);
     g_relay_len = data_len;
     g_relay_new_ttl = ttl;
-    k_mutex_unlock(&g_tx_mutex);
+    k_spin_unlock(&g_relay_lock, key);
 
-    int ret = k_work_submit(&g_relay_work);
+    int ret = k_work_submit_to_queue(&g_tx_work_q, &g_relay_work);
     if (ret < 0) {
         LOG_ERR("Relay work submit failed: %d", ret);
     } else if (ret == 0) {
@@ -348,8 +410,16 @@ int ble_init(uint8_t device_id, struct k_msgq *event_q, uint8_t relay_ttl)
     g_relay_ttl = relay_ttl;
     g_seq = 0;
     g_adv_active = false;
+    g_relay_len = 0;
+    g_relay_new_ttl = 0;
     broadcast_log_init();
     k_work_init(&g_relay_work, relay_work_handler);
+    k_work_init(&g_resume_scan_work, resume_scan_work_handler);
+
+    k_work_queue_init(&g_tx_work_q);
+    k_work_queue_start(&g_tx_work_q, g_tx_work_q_stack,
+                       K_THREAD_STACK_SIZEOF(g_tx_work_q_stack),
+                       TX_WORK_Q_PRIORITY, NULL);
 
     int ret = bt_enable(NULL);
     if (ret) {

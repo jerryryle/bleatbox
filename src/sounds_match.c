@@ -1,4 +1,3 @@
-#include <stdlib.h>
 #include <string.h>
 
 #include "sounds_match.h"
@@ -10,26 +9,23 @@ int sounds_try_match(const char *filename, const char *dot,
         return -1;
     }
 
+    /*
+     * Exactly two digits, zero-padded — sounds_get_path() generates
+     * "%02u" names, so "goat5.mp3" must not match (the generated path
+     * "goat05.mp3" would not exist).
+     */
     const char *num_start = filename + prefix_len;
-    size_t num_len = dot - num_start;
-    if (num_len == 0 || num_len > 2) {
+    if (dot - num_start != 2) {
         return -1;
     }
 
-    for (size_t i = 0; i < num_len; i++) {
+    for (size_t i = 0; i < 2; i++) {
         if (num_start[i] < '0' || num_start[i] > '9') {
             return -1;
         }
     }
 
-    char num_str[3] = {0};
-    memcpy(num_str, num_start, num_len);
-    int idx = (int)strtoul(num_str, NULL, 10);
-    if (idx > 99) {
-        return -1;
-    }
-
-    return idx;
+    return (num_start[0] - '0') * 10 + (num_start[1] - '0');
 }
 
 uint8_t sounds_validate_set(const bool *present, int max_index)

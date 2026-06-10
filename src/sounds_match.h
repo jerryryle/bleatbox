@@ -7,7 +7,8 @@
 
 /**
  * Try to match a filename against a prefix and extract the numeric
- * index.
+ * index.  The index must be exactly two digits, zero-padded, to match
+ * the names sounds_get_path() generates.
  *
  * @param filename    The filename to match (e.g. "goat05.mp3").
  * @param dot         Pointer to the last '.' in @p filename.

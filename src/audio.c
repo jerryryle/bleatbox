@@ -17,9 +17,17 @@
 
 #include "audio.h"
 #include "events.h"
+#include "sdcard.h"
 #include "vs1053b.h"
 
 LOG_MODULE_REGISTER(audio, LOG_LEVEL_INF);
+
+/*
+ * Optional VS1053B firmware patch, applied after every power-up
+ * (hardware reset wipes it).  Compiled by scripts/compile_patch.py;
+ * absent file means no patch — not an error.
+ */
+#define AUDIO_PATCH_PATH SDCARD_MOUNT_POINT "/patch.bin"
 
 /* ------------------------------------------------------------------ */
 /* Hardware                                                           */
@@ -86,6 +94,11 @@ static int read_u16(struct fs_file_t *f, uint16_t *val)
     return 0;
 }
 
+/*
+ * Patch file format (repeated until EOF), as written by
+ * scripts/compile_patch.py:
+ *   [register: 1 byte] [count: 2 bytes BE] [data: count x 2 bytes BE]
+ */
 static int apply_patch_records(struct fs_file_t *f)
 {
     uint8_t reg;
@@ -113,26 +126,24 @@ static int apply_patch_records(struct fs_file_t *f)
     return 0;
 }
 
-int audio_apply_patch(const char *path)
+/* A missing patch file is normal; anything else is logged. */
+static void apply_patch_if_present(void)
 {
     struct fs_file_t f;
     fs_file_t_init(&f);
 
-    int ret = fs_open(&f, path, FS_O_READ);
-    if (ret < 0) {
-        LOG_ERR("Cannot open patch %s: %d", path, ret);
-        return ret;
+    if (fs_open(&f, AUDIO_PATCH_PATH, FS_O_READ) < 0) {
+        return;
     }
 
-    ret = apply_patch_records(&f);
+    int ret = apply_patch_records(&f);
     fs_close(&f);
 
     if (ret) {
-        LOG_ERR("Patch %s failed: %d", path, ret);
+        LOG_ERR("Patch %s failed: %d", AUDIO_PATCH_PATH, ret);
     } else {
-        LOG_INF("Patch %s applied", path);
+        LOG_INF("Patch %s applied", AUDIO_PATCH_PATH);
     }
-    return ret;
 }
 
 int audio_get_volume(uint8_t *percent)
@@ -148,6 +159,21 @@ int audio_set_volume(uint8_t percent)
 /* ------------------------------------------------------------------ */
 /* Playback thread                                                    */
 /* ------------------------------------------------------------------ */
+
+/*
+ * Mark playback over and notify the main loop.  Must run on every
+ * exit path of a playback request — a skipped EVENT_AUDIO_DONE
+ * leaves the main loop's vibration cooldown stuck forever.
+ */
+static void finish_request(void)
+{
+    g_playing = false;
+
+    if (g_event_q) {
+        struct event done_evt = {.type = EVENT_AUDIO_DONE};
+        k_msgq_put(g_event_q, &done_evt, K_NO_WAIT);
+    }
+}
 
 static void playback_thread(void *p1, void *p2, void *p3)
 {
@@ -172,12 +198,21 @@ static void playback_thread(void *p1, void *p2, void *p3)
         int ret = fs_open(&f, req.path, FS_O_READ);
         if (ret < 0) {
             LOG_ERR("Cannot open %s: %d", req.path, ret);
-            g_playing = false;
+            finish_request();
             continue;
         }
 
+        ret = vs1053b_power_up();
+        if (ret) {
+            LOG_ERR("Codec power-up failed: %d", ret);
+            vs1053b_power_down();
+            fs_close(&f);
+            finish_request();
+            continue;
+        }
+        apply_patch_if_present();
+
         LOG_INF("Playing %s", req.path);
-        vs1053b_power_up();
 
         uint8_t buf[VS1053B_DATA_CHUNK];
         ssize_t nread;
@@ -192,13 +227,8 @@ static void playback_thread(void *p1, void *p2, void *p3)
         fs_close(&f);
         vs1053b_end_playback();
         vs1053b_power_down();
-        g_playing = false;
+        finish_request();
         LOG_INF("Playback finished");
-
-        if (g_event_q) {
-            struct event done_evt = {.type = EVENT_AUDIO_DONE};
-            k_msgq_put(g_event_q, &done_evt, K_NO_WAIT);
-        }
     }
 }
 
@@ -223,5 +253,10 @@ void audio_play_sound(const char *path, uint16_t delay_ms)
     req.path[sizeof(req.path) - 1] = '\0';
 
     g_playing = true;
-    k_msgq_put(&g_play_q, &req, K_NO_WAIT);
+    if (k_msgq_put(&g_play_q, &req, K_NO_WAIT)) {
+        /* Queue full: lost a race with another caller, whose pending
+         * request will clear g_playing via finish_request().  Keep the
+         * flag set — a sound is still in flight. */
+        LOG_WRN("Playback request dropped — another request pending");
+    }
 }

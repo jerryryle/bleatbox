@@ -6,6 +6,8 @@
  */
 
 #include <zephyr/shell/shell.h>
+#include <zephyr/logging/log.h>
+
 #include <stdlib.h>
 #include <string.h>
 
@@ -14,6 +16,8 @@
 #include "sdcard.h"
 #include "sounds.h"
 #include "vs1053b.h"
+
+LOG_MODULE_REGISTER(shell_cmds, LOG_LEVEL_INF);
 
 static int cmd_play(const struct shell *sh, size_t argc, char **argv)
 {
@@ -92,12 +96,25 @@ static int cmd_volume(const struct shell *sh, size_t argc, char **argv)
 
 static int cmd_sinetest(const struct shell *sh, size_t argc, char **argv)
 {
+    /* The codec is held in hardware reset while idle, so the test
+     * must power it up first and power it back down afterwards. */
     if (!strcmp(argv[1], "on")) {
+        if (audio_is_playing()) {
+            shell_error(sh, "Busy — sound playing");
+            return -EBUSY;
+        }
+        int ret = vs1053b_power_up();
+        if (ret) {
+            shell_error(sh, "Codec power-up failed: %d", ret);
+            return ret;
+        }
         shell_print(sh, "Sine test on — plug in headphones");
         return vs1053b_sine_test(true);
     } else if (!strcmp(argv[1], "off")) {
         shell_print(sh, "Sine test off");
-        return vs1053b_sine_test(false);
+        int ret = vs1053b_sine_test(false);
+        vs1053b_power_down();
+        return ret;
     }
 
     shell_error(sh, "Usage: sinetest on|off");
