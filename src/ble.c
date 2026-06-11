@@ -137,6 +137,20 @@ static void adv_sent_cb(struct bt_le_ext_adv *adv,
     k_work_submit_to_queue(&g_tx_work_q, &g_resume_scan_work);
 }
 
+/*
+ * (Re)start scanning.  -EALREADY (scan never stopped) is not an
+ * error.  Used after a burst completes and on every advertising
+ * failure path — scanning is this device's only way to hear peers,
+ * so no path may leave it off without a pending burst to restore it.
+ */
+static void resume_scanning(void)
+{
+    int ret = bt_le_scan_start(&g_scan_params, NULL);
+    if (ret && ret != -EALREADY) {
+        LOG_ERR("Failed to restart scanning: %d", ret);
+    }
+}
+
 static void resume_scan_work_handler(struct k_work *work)
 {
     ARG_UNUSED(work);
@@ -146,12 +160,8 @@ static void resume_scan_work_handler(struct k_work *work)
     /* A relay may have started another burst since the sent event —
      * its own completion will resume scanning. */
     if (!g_adv_active) {
-        int ret = bt_le_scan_start(&g_scan_params, NULL);
-        if (ret && ret != -EALREADY) {
-            LOG_ERR("Failed to restart scanning: %d", ret);
-        } else {
-            LOG_INF("BLE scan resumed");
-        }
+        resume_scanning();
+        LOG_INF("BLE scan resumed");
     }
 
     k_mutex_unlock(&g_tx_mutex);
@@ -167,6 +177,8 @@ static int start_advertising(uint8_t mfg_data_size)
                                      NULL, 0);
     if (ret) {
         LOG_ERR("Failed to set adv data: %d", ret);
+        /* Scanning may already be off (preempted relay burst). */
+        resume_scanning();
         return ret;
     }
 
@@ -186,7 +198,7 @@ static int start_advertising(uint8_t mfg_data_size)
     ret = bt_le_ext_adv_start(g_adv_set, &start);
     if (ret) {
         LOG_ERR("Failed to start adv: %d", ret);
-        bt_le_scan_start(&g_scan_params, NULL);
+        resume_scanning();
         return ret;
     }
 
@@ -213,11 +225,16 @@ int ble_advertise_assignments(const struct assignment *assignments,
     if (g_adv_active) {
         int err = bt_le_ext_adv_stop(g_adv_set);
         if (err) {
+            /* Burst still running; starting over it would fail with
+             * -EALREADY and the scan-restart path would overlap scan
+             * with advertising.  Bail — the running burst's completion
+             * still resumes scanning. */
             LOG_WRN("Failed to stop in-flight adv: %d", err);
-        } else {
-            LOG_INF("Preempted in-flight relay broadcast");
-            g_adv_active = false;
+            k_mutex_unlock(&g_tx_mutex);
+            return err;
         }
+        LOG_INF("Preempted in-flight relay broadcast");
+        g_adv_active = false;
     }
 
     uint8_t seq = g_seq++;

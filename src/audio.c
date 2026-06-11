@@ -101,9 +101,16 @@ static int read_u16(struct fs_file_t *f, uint16_t *val)
  */
 static int apply_patch_records(struct fs_file_t *f)
 {
-    uint8_t reg;
+    for (;;) {
+        uint8_t reg;
+        ssize_t n = fs_read(f, &reg, 1);
+        if (n == 0) {
+            return 0; /* EOF — all records applied */
+        }
+        if (n != 1) {
+            return -EIO; /* read error is not EOF — don't claim success */
+        }
 
-    while (fs_read(f, &reg, 1) == 1) {
         uint16_t count;
         int ret = read_u16(f, &count);
         if (ret) {
@@ -122,8 +129,6 @@ static int apply_patch_records(struct fs_file_t *f)
             }
         }
     }
-
-    return 0;
 }
 
 /* A missing patch file is normal; anything else is logged. */
@@ -171,7 +176,12 @@ static void finish_request(void)
 
     if (g_event_q) {
         struct event done_evt = {.type = EVENT_AUDIO_DONE};
-        k_msgq_put(g_event_q, &done_evt, K_NO_WAIT);
+        /* Unlike trigger events, AUDIO_DONE must not be dropped — the
+         * main loop restarts the vibration cooldown only on receipt.
+         * Block until a slot frees: the main loop always drains the
+         * queue and never waits on this thread, so this is brief and
+         * cannot deadlock. */
+        k_msgq_put(g_event_q, &done_evt, K_FOREVER);
     }
 }
 
