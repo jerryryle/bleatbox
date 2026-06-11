@@ -26,11 +26,19 @@ Connect a LIS2DW12 breakout board to the Feather header:
 ### SD card
 
 Format a microSD card as **FAT32**. Place mp3 files in the root directory named
-with zero-padded two-digit indices: `00.mp3`, `01.mp3`, ..., up to `99.mp3`.
+with a `goat` prefix and zero-padded two-digit indices: `goat00.mp3`,
+`goat01.mp3`, ..., up to `goat99.mp3`. The set must be contiguous from
+`goat00.mp3` — a gap fails the boot-time scan. An optional second set with a
+`misc` prefix (`misc00.mp3`, ...) follows the same rules and is playable via
+the shell. `goat00.mp3` is the sound a device plays for its own vibration;
+the rest are assigned randomly to peers.
+
 The firmware scans the card at boot and auto-discovers available sounds. The SD
 card also holds the device configuration file (see
-[Device Configuration](#device-configuration) below). Insert into the Music
-Maker FeatherWing's card slot.
+[Device Configuration](#device-configuration) below) and an optional VS1053B
+codec patch (`patch.bin`, compiled by `scripts/compile_patch.py`, applied on
+every codec power-up if present). Insert into the Music Maker FeatherWing's
+card slot.
 
 ## macOS Development Setup
 
@@ -52,9 +60,9 @@ uv pip install west
 uv pip install pip
 ```
 
-> **Note:** You must `source ~/zephyrproject/.venv/bin/activate` in every new
-> terminal session before running `west`. Add it to your `~/.zshrc` if you
-> prefer it automatic.
+> **Note:** You must `source .venv/bin/activate` (from the project root) in
+> every new terminal session before running `west` directly. The `make`
+> targets activate it for you.
 
 ### 3. Initialize Zephyr workspace
 
@@ -163,12 +171,13 @@ marketplace. This single pack installs:
 2. Set **Nrf Connect: Toolchain Path** to the SDK installed by `west sdk install`.
    The default location is:
    ```
-   ~/.local/zephyr-sdk-1.0.1
+   ~/zephyr-sdk-1.0.1
    ```
    (Run `west sdk list` to confirm the path on your machine.)
-3. Set **Nrf Connect: Zephyr Base** (if not auto-detected):
+3. Set **Nrf Connect: Zephyr Base** (if not auto-detected) to the `zephyr/`
+   directory inside this repo's west workspace:
    ```
-   ~/zephyrproject/zephyr
+   <repo root>/zephyr
    ```
 
 ### Build from VS Code
@@ -213,8 +222,15 @@ peers 0x01 0x42 0xb7 0x05 0x9c
 # Playback volume (0 = silent, 100 = max, default 80)
 volume 80
 
+# Random per-peer delay range in ms before assigned playback (defaults 0-2000)
+delay_min 0
+delay_max 2000
+
 # Accelerometer wakeup threshold in milli-g (default 200)
 accel_threshold 150
+
+# Max relay hops for mesh rebroadcast, 0 disables relaying (default 2)
+relay_ttl 2
 ```
 
 - **`id`** — a single hex byte (`0x00`–`0xFF`) that uniquely identifies this
@@ -223,9 +239,15 @@ accel_threshold 150
   network. Up to 30 peers are supported.
 - **`volume`** *(optional)* — playback volume, 0–100. Defaults to 80 if
   omitted.
+- **`delay_min`** / **`delay_max`** *(optional)* — bounds in milliseconds for
+  the random playback delay assigned to each peer when this device triggers.
+  Default 0–2000; `delay_min` must not exceed `delay_max`.
 - **`accel_threshold`** *(optional)* — wakeup detection threshold in
   milli-g. Defaults to 200 if omitted. Use the `accel` shell command to find
   the right value for your setup.
+- **`relay_ttl`** *(optional)* — maximum hops a broadcast is rebroadcast by
+  receiving devices, extending range beyond a single radio hop. 0 disables
+  relaying. Defaults to 2.
 - Lines starting with `#` are comments.
 - Hex values accept a `0x` prefix or bare hex digits.
 
@@ -243,7 +265,7 @@ is missing or malformed, the firmware logs an error and halts.
    ```
    [00:00:00.xxx,xxx] <inf> device_config: Device ID: 0xa3
    [00:00:00.xxx,xxx] <inf> device_config: Peers:
-                                           a3 01 42 b7 05 9c
+                                           01 42 b7 05 9c
    ```
 
 To change a device's configuration, update `bleatbox.cfg` on its SD card and
@@ -257,6 +279,7 @@ device provisioning succeeds.
 
 | Command | Description |
 |---------|-------------|
-| `bleatbox play <index>` | Play sound file `<index>.mp3` from the SD card |
-| `bleatbox volume <0-100>` | Set playback volume (runtime only, does not persist) |
-| `bleatbox accel [count]` | Sample accelerometer at 100 Hz and print XYZ in milli-g (default 200 samples) |
+| `play goat\|misc <index>` | Play sound `goatNN.mp3` / `miscNN.mp3` from the SD card |
+| `volume [0-100]` | Get the playback volume, or set it (runtime only, does not persist) |
+| `accel [count]` | Sample accelerometer at 100 Hz and print XYZ in milli-g (default 200 samples) |
+| `sinetest on\|off` | Play the VS1053B's built-in sine test tone |

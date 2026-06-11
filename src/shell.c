@@ -111,6 +111,13 @@ static int cmd_sinetest(const struct shell *sh, size_t argc, char **argv)
         shell_print(sh, "Sine test on — plug in headphones");
         return vs1053b_sine_test(true);
     } else if (!strcmp(argv[1], "off")) {
+        /* A playback may have started since "on" (its power-up soft
+         * reset already killed the tone) — don't yank the codec into
+         * reset mid-stream. */
+        if (audio_is_playing()) {
+            shell_error(sh, "Busy — sound playing");
+            return -EBUSY;
+        }
         shell_print(sh, "Sine test off");
         int ret = vs1053b_sine_test(false);
         vs1053b_power_down();

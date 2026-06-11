@@ -55,6 +55,15 @@ TEST(ParseHexByte, EmptyString)
     EXPECT_NE(device_config_parse_hex_byte("", &out), 0);
 }
 
+TEST(ParseHexByte, TrailingJunkRejected)
+{
+    /* "0g" would silently parse as 0x0 if only the consumed prefix
+     * were checked — a typo'd device ID must be an error. */
+    uint8_t out = 0;
+    EXPECT_NE(device_config_parse_hex_byte("0g", &out), 0);
+    EXPECT_NE(device_config_parse_hex_byte("FFx", &out), 0);
+}
+
 /* ------------------------------------------------------------------ */
 /* parse_line                                                         */
 /* ------------------------------------------------------------------ */
@@ -163,6 +172,22 @@ TEST_F(ParseLineTest, VolumeTooHigh)
 TEST_F(ParseLineTest, VolumeMissing)
 {
     EXPECT_NE(parse("volume"), 0);
+}
+
+TEST_F(ParseLineTest, NumericTrailingJunkRejected)
+{
+    EXPECT_NE(parse("volume 100abc"), 0);
+    EXPECT_NE(parse("delay_min 5x"), 0);
+    EXPECT_NE(parse("delay_max 2000ms"), 0);
+    EXPECT_NE(parse("accel_threshold 200mg"), 0);
+    EXPECT_NE(parse("relay_ttl 2.5"), 0);
+}
+
+TEST_F(ParseLineTest, NegativeNumberRejected)
+{
+    /* strtoul wraps negatives to huge values — bounds catch them. */
+    EXPECT_NE(parse("volume -5"), 0);
+    EXPECT_NE(parse("delay_min -1"), 0);
 }
 
 TEST_F(ParseLineTest, DelayMinValid)
