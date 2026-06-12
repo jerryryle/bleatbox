@@ -4,7 +4,12 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-#define BROADCAST_LOG_SIZE 8
+/*
+ * Sized above the maximum fleet size (DEVICE_CONFIG_MAX_PEERS) so a
+ * burst of broadcasts from every device can't evict entries whose
+ * packets are still being relayed around the mesh.
+ */
+#define BROADCAST_LOG_SIZE 32
 
 struct broadcast_log_entry {
     uint8_t originator;

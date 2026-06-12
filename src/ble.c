@@ -22,6 +22,7 @@
 
 #include "ble.h"
 #include "broadcast_log.h"
+#include "device_config.h"
 #include "events.h"
 
 LOG_MODULE_REGISTER(ble, LOG_LEVEL_INF);
@@ -44,6 +45,8 @@ LOG_MODULE_REGISTER(ble, LOG_LEVEL_INF);
 BUILD_ASSERT(BLE_AD_OVERHEAD + HEADER_SIZE + BLE_MAX_ASSIGNMENTS * ASSIGNMENT_ENTRY_SIZE
              <= CONFIG_BT_CTLR_ADV_DATA_LEN_MAX,
              "BLE_MAX_ASSIGNMENTS exceeds controller advertising data capacity");
+BUILD_ASSERT(BLE_MAX_ASSIGNMENTS >= DEVICE_CONFIG_MAX_PEERS,
+             "every configured peer must fit in one broadcast");
 
 /* Offsets within the header */
 #define HDR_OFF_COMPANY_LO 0
@@ -347,7 +350,10 @@ static void handle_mfg_data(const uint8_t *data, uint8_t data_len)
 
     uint8_t originator = data[HDR_OFF_ORIGINATOR];
     uint8_t seq = data[HDR_OFF_SEQ];
-    uint8_t ttl = data[HDR_OFF_TTL];
+
+    /* The TTL arrives from the air — clamp it to our own configured
+     * limit so a spoofed packet can't make the mesh relay 255 hops. */
+    uint8_t ttl = MIN(data[HDR_OFF_TTL], g_relay_ttl);
 
     if (broadcast_log_check_and_record(originator, seq)) {
         LOG_DBG("Duplicate dropped: originator=0x%02x seq=%u",

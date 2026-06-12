@@ -8,9 +8,12 @@
 #include <zephyr/random/random.h>
 
 #include "assignments.h"
+#include "device_config.h"
 #include "wrap_to_range.h"
 
-#define MAX_PEERS 30
+/* Capacity matches the config limit so configured peers are never
+ * silently dropped by the clamp in assignments_init(). */
+#define MAX_PEERS DEVICE_CONFIG_MAX_PEERS
 
 static struct assignment g_assignments[MAX_PEERS];
 static uint8_t g_peer_ids[MAX_PEERS];

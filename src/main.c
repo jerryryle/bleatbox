@@ -102,10 +102,13 @@ static void handle_vibration(void)
         return;
     }
 
-    g_drop_vibration_events = true;
-
     LOG_INF("Vibration detected — playing %s", path);
-    audio_play_sound(path, 0);
+    g_drop_vibration_events = true;
+    if (audio_play_sound(path, 0)) {
+        /* Lost a race with another playback claim — its completion
+         * will run the cooldown instead. */
+        return;
+    }
 
     const struct assignment *assignments;
     int n = assignments_generate(&assignments);
@@ -139,6 +142,7 @@ static void handle_ble_rx(const struct event *evt)
     LOG_INF("BLE RX assignment: sound=0x%02x delay=%u ms",
             evt->sound, evt->delay_ms);
 
+    g_drop_vibration_events = true;
     audio_play_sound(path, evt->delay_ms);
 }
 
