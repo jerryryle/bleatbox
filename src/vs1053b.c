@@ -14,6 +14,8 @@
 #include <zephyr/drivers/spi.h>
 #include <zephyr/logging/log.h>
 
+#include <string.h>
+
 #include "vs1053b.h"
 
 LOG_MODULE_REGISTER(vs1053b, LOG_LEVEL_INF);
@@ -49,6 +51,9 @@ LOG_MODULE_REGISTER(vs1053b, LOG_LEVEL_INF);
 
 #define VS_STATUS_APDOWN1   BIT(2)
 #define VS_STATUS_APDOWN2   BIT(3)
+
+/* Parametric WRAM address of endFillByte (datasheet 10.11). */
+#define VS_PARA_END_FILL_BYTE 0x1E06
 
 /*
  * DREQ timeout: the VS1053B deasserts DREQ while its FIFO is full
@@ -123,6 +128,14 @@ static uint16_t g_vol_reg;
  * cached g_vol_reg and defer the hardware write until power-up.
  */
 static bool g_in_reset;
+
+/*
+ * Serializes all public entry points: the playback thread streams SDI
+ * data while the shell may issue SCI commands (volume, sine test), and
+ * both DREQ gating and the g_in_reset/g_vol_reg state assume exclusive
+ * access between the DREQ check and the SPI transaction.
+ */
+static K_MUTEX_DEFINE(g_codec_mutex);
 
 
 /* ------------------------------------------------------------------ */
@@ -218,6 +231,24 @@ static uint16_t vol_percent_to_reg(uint8_t percent)
     return ((uint16_t)att << 8) | att;
 }
 
+/* Lock-free body of vs1053b_write_data(), also used by the sine test
+ * and end-of-playback sequences that already hold g_codec_mutex. */
+static int vs_write_data(const uint8_t *data, size_t len)
+{
+    struct spi_buf tx_buf = {.buf = (void *)data, .len = len};
+    struct spi_buf_set tx_set = {.buffers = &tx_buf, .count = 1};
+
+    int ret = vs_wait_dreq();
+    if (ret)
+        return ret;
+
+    ret = spi_write(g_spi, &g_vs_data_spi_cfg, &tx_set);
+    if (ret) {
+        LOG_ERR("SPI data write failed: %d", ret);
+    }
+    return ret;
+}
+
 /*
  * Bring the codec from a reset state to a ready-to-play state: soft
  * reset, boost the internal clock, and load the cached volume.  Used by
@@ -255,14 +286,19 @@ static int vs_configure(void)
 
 int vs1053b_get_volume(uint8_t *percent)
 {
+    k_mutex_lock(&g_codec_mutex, K_FOREVER);
+
     /* In reset the SCI register is unreadable — report the cache. */
     uint16_t reg = g_vol_reg;
+    int ret = 0;
 
     if (!g_in_reset) {
-        int ret = vs_read_reg(VS_REG_VOL, &reg);
-        if (ret) {
-            return ret;
-        }
+        ret = vs_read_reg(VS_REG_VOL, &reg);
+    }
+    k_mutex_unlock(&g_codec_mutex);
+
+    if (ret) {
+        return ret;
     }
 
     /* Use left channel (high byte). 0x00 = max, 0xFE = silence. */
@@ -277,39 +313,37 @@ int vs1053b_get_volume(uint8_t *percent)
 
 int vs1053b_set_volume(uint8_t percent)
 {
+    k_mutex_lock(&g_codec_mutex, K_FOREVER);
+
     g_vol_reg = vol_percent_to_reg(percent);
 
     /* In reset the SCI write would hang on DREQ; the cached value is
      * applied by vs_configure() on the next power-up. */
-    if (g_in_reset) {
-        return 0;
+    int ret = 0;
+    if (!g_in_reset) {
+        ret = vs_write_reg(VS_REG_VOL, g_vol_reg);
     }
-
-    return vs_write_reg(VS_REG_VOL, g_vol_reg);
+    k_mutex_unlock(&g_codec_mutex);
+    return ret;
 }
 
 int vs1053b_write_data(const uint8_t *data, size_t len)
 {
-    struct spi_buf tx_buf = {.buf = (void *)data, .len = len};
-    struct spi_buf_set tx_set = {.buffers = &tx_buf, .count = 1};
-
-    int ret = vs_wait_dreq();
-    if (ret)
-        return ret;
-
-    ret = spi_write(g_spi, &g_vs_data_spi_cfg, &tx_set);
-    if (ret) {
-        LOG_ERR("SPI data write failed: %d", ret);
-    }
+    k_mutex_lock(&g_codec_mutex, K_FOREVER);
+    int ret = vs_write_data(data, len);
+    k_mutex_unlock(&g_codec_mutex);
     return ret;
 }
 
 int vs1053b_write_reg(uint8_t reg, uint16_t val)
 {
-    return vs_write_reg(reg, val);
+    k_mutex_lock(&g_codec_mutex, K_FOREVER);
+    int ret = vs_write_reg(reg, val);
+    k_mutex_unlock(&g_codec_mutex);
+    return ret;
 }
 
-int vs1053b_sine_test(bool enable)
+static int vs_sine_test(bool enable)
 {
     int ret;
 
@@ -330,7 +364,7 @@ int vs1053b_sine_test(bool enable)
             0x00,
             0x00,
         };
-        ret = vs1053b_write_data(start, sizeof(start));
+        ret = vs_write_data(start, sizeof(start));
     } else {
         uint8_t stop[] = {
             0x45,
@@ -342,7 +376,7 @@ int vs1053b_sine_test(bool enable)
             0x00,
             0x00,
         };
-        ret = vs1053b_write_data(stop, sizeof(stop));
+        ret = vs_write_data(stop, sizeof(stop));
         if (ret)
             return ret;
         k_msleep(1);
@@ -352,25 +386,69 @@ int vs1053b_sine_test(bool enable)
     return ret;
 }
 
-int vs1053b_end_playback(void)
+int vs1053b_sine_test(bool enable)
 {
-    uint16_t mode;
-    int ret = vs_read_reg(VS_REG_MODE, &mode);
+    k_mutex_lock(&g_codec_mutex, K_FOREVER);
+    int ret = vs_sine_test(enable);
+    k_mutex_unlock(&g_codec_mutex);
+    return ret;
+}
+
+/* Read the decoder's endFillByte parameter from parametric WRAM. */
+static int vs_read_end_fill_byte(uint8_t *fill)
+{
+    int ret = vs_write_reg(VS_REG_WRAMADDR, VS_PARA_END_FILL_BYTE);
     if (ret) {
         return ret;
     }
 
+    uint16_t val;
+    ret = vs_read_reg(VS_REG_WRAM, &val);
+    if (ret) {
+        return ret;
+    }
+
+    *fill = (uint8_t)(val & 0xFF);
+    return 0;
+}
+
+/*
+ * Datasheet 10.5.1: send at least 2052 bytes of endFillByte, set
+ * SM_CANCEL, then keep sending endFillByte in 32-byte chunks (at most
+ * 2048 bytes) until the bit clears.  If it never clears, fall back to
+ * a soft reset.
+ */
+static int vs_end_playback(void)
+{
+    uint8_t fill_byte;
+    int ret = vs_read_end_fill_byte(&fill_byte);
+    if (ret) {
+        return ret;
+    }
+
+    uint8_t fill[VS1053B_DATA_CHUNK];
+    memset(fill, fill_byte, sizeof(fill));
+
+    /* 65 chunks x 32 bytes = 2080 >= 2052 */
+    for (int i = 0; i < 65; i++) {
+        ret = vs_write_data(fill, sizeof(fill));
+        if (ret) {
+            return ret;
+        }
+    }
+
+    uint16_t mode;
+    ret = vs_read_reg(VS_REG_MODE, &mode);
+    if (ret) {
+        return ret;
+    }
     ret = vs_write_reg(VS_REG_MODE, mode | VS_MODE_CANCEL);
     if (ret) {
         return ret;
     }
 
-    /* Send 32 bytes of zeros (endFillByte is 0 for most codecs)
-     * repeatedly until SM_CANCEL clears, meaning the codec has
-     * finished flushing its internal buffers. */
-    uint8_t zeros[VS1053B_DATA_CHUNK] = {0};
     for (int i = 0; i < 64; i++) {
-        ret = vs1053b_write_data(zeros, sizeof(zeros));
+        ret = vs_write_data(fill, sizeof(fill));
         if (ret) {
             break;
         }
@@ -393,7 +471,15 @@ int vs1053b_end_playback(void)
     return vs_wait_dreq();
 }
 
-int vs1053b_power_down(void)
+int vs1053b_end_playback(void)
+{
+    k_mutex_lock(&g_codec_mutex, K_FOREVER);
+    int ret = vs_end_playback();
+    k_mutex_unlock(&g_codec_mutex);
+    return ret;
+}
+
+static int vs_power_down(void)
 {
     if (g_in_reset) {
         return 0;
@@ -419,7 +505,15 @@ int vs1053b_power_down(void)
     return 0;
 }
 
-int vs1053b_power_up(void)
+int vs1053b_power_down(void)
+{
+    k_mutex_lock(&g_codec_mutex, K_FOREVER);
+    int ret = vs_power_down();
+    k_mutex_unlock(&g_codec_mutex);
+    return ret;
+}
+
+static int vs_power_up(void)
 {
     /* Release hardware reset and let the codec's oscillator start. */
     int ret = gpio_pin_set_dt(&g_vs_reset, 0);
@@ -438,6 +532,14 @@ int vs1053b_power_up(void)
 
     LOG_INF("VS1053B released from reset and reconfigured");
     return 0;
+}
+
+int vs1053b_power_up(void)
+{
+    k_mutex_lock(&g_codec_mutex, K_FOREVER);
+    int ret = vs_power_up();
+    k_mutex_unlock(&g_codec_mutex);
+    return ret;
 }
 
 int vs1053b_init(const struct device *spi_dev)

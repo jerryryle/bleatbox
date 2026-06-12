@@ -42,10 +42,7 @@ int audio_set_volume(uint8_t percent);
  *
  * Returns immediately.  Playback runs on a dedicated background
  * thread.  audio_is_playing() returns true from the moment this
- * function is called until the file has been fully streamed.
- *
- * Calling this while a sound is already playing is a no-op (the
- * call is logged and ignored).
+ * function returns success until the file has been fully streamed.
  *
  * The path string is copied internally; the caller's buffer does
  * not need to remain valid after this function returns.
@@ -54,8 +51,26 @@ int audio_set_volume(uint8_t percent);
  * @param delay_ms  Milliseconds to wait before playback starts.
  *                  The delay runs on the audio thread; audio_is_playing()
  *                  returns true for the entire duration.
+ * @return 0 if the request was accepted, -EBUSY if a sound is
+ *         already playing (the request is ignored).
  */
-void audio_play_sound(const char *path, uint16_t delay_ms);
+int audio_play_sound(const char *path, uint16_t delay_ms);
+
+/**
+ * Start or stop the VS1053B sine test tone.
+ *
+ * Starting claims the codec like a playback request: trigger events
+ * are ignored while the tone runs, and playback cannot start until
+ * the test is stopped.  Stopping powers the codec back down and
+ * posts EVENT_AUDIO_DONE so the main loop runs its vibration
+ * cooldown.
+ *
+ * @param enable  true to start the tone, false to stop it.
+ * @return 0 on success, -EBUSY if a sound is playing, -EALREADY if
+ *         stopping while no test is running, or a negative errno
+ *         from the codec.
+ */
+int audio_sine_test(bool enable);
 
 /**
  * Check whether a sound is currently playing.

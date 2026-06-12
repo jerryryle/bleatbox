@@ -59,6 +59,14 @@ int device_config_load(struct device_config *cfg)
         }
     }
 
+    if (nread < 0) {
+        /* A mid-file I/O error is not EOF — a truncated config could
+         * silently load with defaults for the missing lines. */
+        LOG_ERR("Read error in %s: %d", CONFIG_PATH, (int)nread);
+        fs_close(&file);
+        return (int)nread;
+    }
+
     if (pos > 0) {
         buf[pos] = '\0';
         ret = device_config_parse_line(buf, cfg, &has_id);
@@ -78,6 +86,15 @@ int device_config_load(struct device_config *cfg)
     if (cfg->peer_count == 0) {
         LOG_ERR("Config file missing 'peers'");
         return -EINVAL;
+    }
+    for (int i = 0; i < cfg->peer_count; i++) {
+        /* A self-assignment is recorded in the dedup log at send time
+         * and would never play — reject the misconfig loudly instead. */
+        if (cfg->peers[i] == cfg->id) {
+            LOG_ERR("Config 'peers' must not contain this device's id (0x%02x)",
+                    cfg->id);
+            return -EINVAL;
+        }
     }
     if (cfg->delay_min_ms > cfg->delay_max_ms) {
         LOG_ERR("delay_min (%u) must not exceed delay_max (%u)",

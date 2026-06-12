@@ -12,6 +12,7 @@
 #include <zephyr/drivers/spi.h>
 #include <zephyr/fs/fs.h>
 #include <zephyr/logging/log.h>
+#include <zephyr/sys/atomic.h>
 
 #include <string.h>
 
@@ -36,7 +37,15 @@ LOG_MODULE_REGISTER(audio, LOG_LEVEL_INF);
 static const struct device *g_spi_dev = DEVICE_DT_GET(DT_NODELABEL(spi1));
 static struct k_msgq *g_event_q;
 
-static volatile bool g_playing;
+/*
+ * Set (via compare-and-set) by whoever claims the codec — a playback
+ * request or the sine test — and cleared when the codec goes idle.
+ */
+static atomic_t g_playing;
+
+/* Sine test currently running.  Only touched by audio_sine_test()
+ * (shell thread), under the g_playing claim. */
+static bool g_sine_active;
 
 #define SOUND_PATH_MAX 32
 
@@ -58,7 +67,8 @@ K_THREAD_DEFINE(audio_tid, AUDIO_STACK_SIZE,
 int audio_init(struct k_msgq *event_q)
 {
     g_event_q = event_q;
-    g_playing = false;
+    atomic_set(&g_playing, 0);
+    g_sine_active = false;
 
     if (!device_is_ready(g_spi_dev)) {
         LOG_ERR("SPI device not ready");
@@ -172,8 +182,6 @@ int audio_set_volume(uint8_t percent)
  */
 static void finish_request(void)
 {
-    g_playing = false;
-
     if (g_event_q) {
         struct event done_evt = {.type = EVENT_AUDIO_DONE};
         /* Unlike trigger events, AUDIO_DONE must not be dropped — the
@@ -183,6 +191,14 @@ static void finish_request(void)
          * cannot deadlock. */
         k_msgq_put(g_event_q, &done_evt, K_FOREVER);
     }
+
+    /*
+     * Clear the claim only after AUDIO_DONE is queued: any vibration
+     * event that arrives once the codec reads as idle is then ordered
+     * behind AUDIO_DONE in the queue, so the main loop restarts the
+     * cooldown before it can act on the vibration.
+     */
+    atomic_set(&g_playing, 0);
 }
 
 static void playback_thread(void *p1, void *p2, void *p3)
@@ -233,6 +249,9 @@ static void playback_thread(void *p1, void *p2, void *p3)
                 break;
             }
         }
+        if (nread < 0) {
+            LOG_ERR("Read error on %s: %d", req.path, (int)nread);
+        }
 
         fs_close(&f);
         vs1053b_end_playback();
@@ -248,25 +267,70 @@ static void playback_thread(void *p1, void *p2, void *p3)
 
 bool audio_is_playing(void)
 {
-    return g_playing;
+    return atomic_get(&g_playing) != 0;
 }
 
-void audio_play_sound(const char *path, uint16_t delay_ms)
+int audio_play_sound(const char *path, uint16_t delay_ms)
 {
-    if (g_playing) {
+    if (!atomic_cas(&g_playing, 0, 1)) {
         LOG_WRN("audio_play_sound called while already playing — ignored");
-        return;
+        return -EBUSY;
     }
 
     struct play_request req = {.delay_ms = delay_ms};
     strncpy(req.path, path, sizeof(req.path) - 1);
     req.path[sizeof(req.path) - 1] = '\0';
 
-    g_playing = true;
     if (k_msgq_put(&g_play_q, &req, K_NO_WAIT)) {
-        /* Queue full: lost a race with another caller, whose pending
-         * request will clear g_playing via finish_request().  Keep the
-         * flag set — a sound is still in flight. */
-        LOG_WRN("Playback request dropped — another request pending");
+        /* Unreachable — a successful claim means the previous request
+         * was drained from the queue — but don't strand the claim if
+         * that ever changes. */
+        LOG_ERR("Playback request dropped — queue full");
+        atomic_set(&g_playing, 0);
+        return -EAGAIN;
     }
+    return 0;
+}
+
+int audio_sine_test(bool enable)
+{
+    if (enable) {
+        if (g_sine_active) {
+            return 0;
+        }
+
+        /* Claim the codec like a playback request: trigger events are
+         * dropped by the audio_is_playing() gates while the tone runs,
+         * and playback cannot start until the test is stopped. */
+        if (!atomic_cas(&g_playing, 0, 1)) {
+            return -EBUSY;
+        }
+
+        int ret = vs1053b_power_up();
+        if (ret == 0) {
+            ret = vs1053b_sine_test(true);
+        }
+        if (ret) {
+            vs1053b_power_down();
+            atomic_set(&g_playing, 0);
+            return ret;
+        }
+
+        g_sine_active = true;
+        return 0;
+    }
+
+    if (!g_sine_active) {
+        return -EALREADY;
+    }
+
+    int ret = vs1053b_sine_test(false);
+    vs1053b_power_down();
+    g_sine_active = false;
+
+    /* Release the claim exactly like a finished playback so the main
+     * loop runs its vibration cooldown — the tone shook the enclosure
+     * just like a real sound. */
+    finish_request();
+    return ret;
 }

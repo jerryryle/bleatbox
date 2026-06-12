@@ -1,5 +1,8 @@
 /*
  * VS1053B codec driver — SPI command/data interface.
+ *
+ * All public functions except vs1053b_init() are serialized by an
+ * internal mutex and may be called from any thread (not from ISRs).
  */
 
 #ifndef VS1053B_H_
@@ -47,8 +50,7 @@ int vs1053b_set_volume(uint8_t percent);
 /**
  * Write a chunk of audio data to the VS1053B SDI (data) interface.
  *
- * Waits for DREQ before transmitting.  Caller is responsible for
- * holding the playback mutex if concurrent access is possible.
+ * Waits for DREQ before transmitting.
  *
  * @param data  Pointer to audio data (typically 32 bytes).
  * @param len   Number of bytes to send.
@@ -101,8 +103,8 @@ int vs1053b_power_up(void);
  * Finish playback and reset the codec for the next file.
  *
  * Must be called after the last audio data is sent.  Sends endFillByte
- * padding, then performs a soft reset so the decoder is ready to accept
- * a new stream.
+ * padding and SM_CANCEL per the datasheet sequence (falling back to a
+ * soft reset) so the decoder is ready to accept a new stream.
  *
  * @return 0 on success, negative errno on failure.
  */

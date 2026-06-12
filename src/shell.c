@@ -15,7 +15,6 @@
 #include "audio.h"
 #include "sdcard.h"
 #include "sounds.h"
-#include "vs1053b.h"
 
 LOG_MODULE_REGISTER(shell_cmds, LOG_LEVEL_INF);
 
@@ -53,13 +52,12 @@ static int cmd_play(const struct shell *sh, size_t argc, char **argv)
         return -ENODEV;
     }
 
-    if (audio_is_playing()) {
+    if (audio_play_sound(path, 0)) {
         shell_warn(sh, "Already playing — ignored");
         return 0;
     }
 
     shell_print(sh, "Playing %s %lu", argv[1], idx);
-    audio_play_sound(path, 0);
     return 0;
 }
 
@@ -96,32 +94,30 @@ static int cmd_volume(const struct shell *sh, size_t argc, char **argv)
 
 static int cmd_sinetest(const struct shell *sh, size_t argc, char **argv)
 {
-    /* The codec is held in hardware reset while idle, so the test
-     * must power it up first and power it back down afterwards. */
     if (!strcmp(argv[1], "on")) {
-        if (audio_is_playing()) {
+        int ret = audio_sine_test(true);
+        if (ret == -EBUSY) {
             shell_error(sh, "Busy — sound playing");
-            return -EBUSY;
+            return ret;
         }
-        int ret = vs1053b_power_up();
         if (ret) {
-            shell_error(sh, "Codec power-up failed: %d", ret);
+            shell_error(sh, "Sine test start failed: %d", ret);
             return ret;
         }
         shell_print(sh, "Sine test on — plug in headphones");
-        return vs1053b_sine_test(true);
+        return 0;
     } else if (!strcmp(argv[1], "off")) {
-        /* A playback may have started since "on" (its power-up soft
-         * reset already killed the tone) — don't yank the codec into
-         * reset mid-stream. */
-        if (audio_is_playing()) {
-            shell_error(sh, "Busy — sound playing");
-            return -EBUSY;
+        int ret = audio_sine_test(false);
+        if (ret == -EALREADY) {
+            shell_error(sh, "Sine test not running");
+            return ret;
+        }
+        if (ret) {
+            shell_error(sh, "Sine test stop failed: %d", ret);
+            return ret;
         }
         shell_print(sh, "Sine test off");
-        int ret = vs1053b_sine_test(false);
-        vs1053b_power_down();
-        return ret;
+        return 0;
     }
 
     shell_error(sh, "Usage: sinetest on|off");
