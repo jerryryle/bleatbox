@@ -27,9 +27,20 @@ Event-driven main loop with decoupled producer modules:
 
 Adding a new trigger source means: create a module that calls `k_msgq_put` with an event, add a case to the main loop's switch, and wire up init in `main()`.
 
+### Module lifecycle (two-phase init)
+
+Modules separate **setup** from **operation**, and `main()` runs the whole fleet through both phases in order:
+
+- **`<module>_init()`** — initialize internal state and, optionally, bring up the hardware peripheral. No side effects: it must not start producing events, start scanning, arm interrupts, or otherwise *use* the peripheral. It is config-independent (takes no values from `bleatbox.cfg`), so phase 1 runs before the SD card is even mounted. A module that can fail records its readiness in a `static bool g_ready` (or similar) set here.
+- **The operate phase** — a second function (`<module>_start(...)`, `sounds_scan()`, `sdcard_mount()`, `audio_play_sound()`, …) does the work that uses the peripheral and takes any config-derived parameters. It gates on the readiness flag so it is a safe no-op when init failed.
+
+`main()` therefore reads top-to-bottom as: **phase 1** — call every `_init()`; **phase 2** — load config, then call the operate/`_start()` functions. Producers (the accelerometer trigger, the BLE scan) come alive only at the very end, so no event can arrive before every module is ready.
+
+Every init step except the event queue itself is **non-fatal**: a failed subsystem logs an error and `main()` continues, disabling only its own feature (no codec → playback fails gracefully; no SD card → default config; no accelerometer → no vibration triggers). This keeps the shell and the remaining subsystems available for debugging in the field. Pure-state modules (`assignments`, `broadcast_log`) and stateless helpers (`device_config`, `wrap_to_range`, `sounds_match`) have only the relevant phase and no separate `_init()`.
+
 ### Configuration
 
-`/SD:/bleatbox.cfg` is a line-oriented text config parsed by `device_config.c`. Each device runs identical firmware — only the SD card contents differ. Adding a new config field means: add to `struct device_config`, add a default in `device_config_load`, add a `parse_line` branch, and pass the value where needed.
+`/SD:/bleatbox.cfg` is a line-oriented text config parsed by `device_config.c`. Each device runs identical firmware — only the SD card contents differ. Adding a new config field means: add to `struct device_config`, add a default in `device_config_defaults`, add a `parse_line` branch, and pass the value where needed.
 
 ### Devicetree
 

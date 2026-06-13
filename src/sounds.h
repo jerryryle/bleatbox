@@ -10,10 +10,17 @@ enum sound_type {
 };
 
 /**
+ * Initialize the sounds module's internal state (zero the counts).
+ *
+ * Must be called before sounds_scan().  Has no filesystem side effects.
+ */
+void sounds_init(void);
+
+/**
  * Scan the SD card for numbered .mp3 files and record the counts.
  *
  * Scans for goat and misc prefixes. Goat sounds must be present;
- * misc sounds are optional.
+ * misc sounds are optional.  Requires sounds_init() to have run first.
  *
  * @return 0 on success, negative errno on failure.
  */

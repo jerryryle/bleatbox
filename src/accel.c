@@ -29,6 +29,10 @@ static const struct i2c_dt_spec g_i2c_spec =
 
 static struct k_msgq *g_evt_q;
 
+/* Set in accel_init() once the device is confirmed ready; gates
+ * accel_start() so it never touches an unready peripheral. */
+static bool g_ready;
+
 /*
  * The sensor API stores this pointer (the LIS2DW12 driver hands it
  * back on every interrupt), so it must outlive accel_init().
@@ -45,12 +49,23 @@ static void accel_trigger_handler(const struct device *dev,
     k_msgq_put(g_evt_q, &evt, K_NO_WAIT);
 }
 
-int accel_init(struct k_msgq *event_q, uint16_t threshold_mg)
+int accel_init(struct k_msgq *event_q)
 {
     g_evt_q = event_q;
+    g_ready = device_is_ready(g_accel_dev);
 
-    if (!device_is_ready(g_accel_dev)) {
+    if (!g_ready) {
         LOG_ERR("LIS2DW12 device not ready");
+        return -ENODEV;
+    }
+
+    LOG_INF("LIS2DW12 initialized");
+    return 0;
+}
+
+int accel_start(uint16_t threshold_mg)
+{
+    if (!g_ready) {
         return -ENODEV;
     }
 
@@ -69,7 +84,7 @@ int accel_init(struct k_msgq *event_q, uint16_t threshold_mg)
         return ret;
     }
 
-    /* Register wakeup trigger */
+    /* Register wakeup trigger — begins producing EVENT_VIBRATION. */
     ret = sensor_trigger_set(g_accel_dev, &g_motion_trigger,
                              accel_trigger_handler);
     if (ret) {
@@ -77,7 +92,7 @@ int accel_init(struct k_msgq *event_q, uint16_t threshold_mg)
         return ret;
     }
 
-    LOG_INF("LIS2DW12 ready — threshold %u mg", threshold_mg);
+    LOG_INF("LIS2DW12 started — threshold %u mg", threshold_mg);
     return 0;
 }
 

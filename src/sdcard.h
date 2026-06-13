@@ -7,7 +7,14 @@
 #define SDCARD_MOUNT_POINT "/SD:"
 
 /**
- * Initialize and mount the SD card filesystem.
+ * Initialize the SD card module's internal state.
+ *
+ * Must be called before sdcard_mount().  Touches no hardware.
+ */
+void sdcard_init(void);
+
+/**
+ * Mount the SD card filesystem.
  *
  * @return 0 on success, negative errno on failure.
  */
