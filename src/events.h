@@ -8,9 +8,10 @@
 #include <stdint.h>
 
 enum event_type {
-    EVENT_VIBRATION,  /* Debounced vibration detected               */
-    EVENT_BLE_RX,     /* BLE broadcast with our assignment received */
-    EVENT_AUDIO_DONE, /* Playback thread finished streaming         */
+    EVENT_VIBRATION,   /* Debounced vibration detected                */
+    EVENT_BLE_RX,      /* BLE broadcast with our assignment received  */
+    EVENT_AUDIO_START, /* Codec claimed — playback or sine test began */
+    EVENT_AUDIO_DONE,  /* Codec released — playback or sine test over */
 };
 
 struct event {
