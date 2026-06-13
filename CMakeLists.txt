@@ -5,6 +5,7 @@ project(bleatbox)
 target_sources(app PRIVATE
     src/main.c
     src/accel.c
+    src/battery.c
     src/vs1053b.c
     src/sdcard.c
     src/audio.c

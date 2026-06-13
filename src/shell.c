@@ -13,6 +13,7 @@
 
 #include "accel.h"
 #include "audio.h"
+#include "battery.h"
 #include "sdcard.h"
 #include "sounds.h"
 
@@ -198,6 +199,36 @@ static int cmd_threshold(const struct shell *sh, size_t argc, char **argv)
     return 0;
 }
 
+/* Rough LiPo state-of-charge: linear between 3.3 V (empty) and 4.2 V
+ * (full), clamped.  A crude approximation — the discharge curve is not
+ * linear — but enough to tell a healthy pack from a dying one. */
+static int battery_percent(int32_t mv)
+{
+    if (mv <= 3300) {
+        return 0;
+    }
+    if (mv >= 4200) {
+        return 100;
+    }
+    return (mv - 3300) * 100 / (4200 - 3300);
+}
+
+static int cmd_battery(const struct shell *sh, size_t argc, char **argv)
+{
+    ARG_UNUSED(argc);
+    ARG_UNUSED(argv);
+
+    int32_t mv;
+    int ret = battery_read_mv(&mv);
+    if (ret) {
+        shell_error(sh, "Battery read failed: %d", ret);
+        return ret;
+    }
+
+    shell_print(sh, "Battery: %d mV (~%d%%)", mv, battery_percent(mv));
+    return 0;
+}
+
 SHELL_CMD_ARG_REGISTER(play, NULL,
                        "Play a sound: play goat|misc <index>",
                        cmd_play, 3, 0);
@@ -218,3 +249,7 @@ SHELL_CMD_ARG_REGISTER(threshold, NULL,
                        "Set vibration threshold in mg: "
                        "threshold <mg>",
                        cmd_threshold, 2, 0);
+
+SHELL_CMD_ARG_REGISTER(battery, NULL,
+                       "Read battery voltage and approximate charge",
+                       cmd_battery, 1, 0);
