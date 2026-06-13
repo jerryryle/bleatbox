@@ -79,15 +79,12 @@ static K_TIMER_DEFINE(g_vibration_cooldown_timer, cooldown_expired, NULL);
 
 static void handle_vibration(void)
 {
-    if (g_drop_vibration_events) {
-        LOG_INF("Vibration dropped — cooldown active");
-        return;
-    }
-
     /*
      * A playing sound (e.g. a BLE-assigned one) shakes the enclosure;
      * don't broadcast assignments for vibration we likely caused
      * ourselves while our own playback request would be discarded.
+     * This also covers the window between a claim and the main loop
+     * processing its EVENT_AUDIO_START.
      */
     if (audio_is_playing()) {
         LOG_INF("Vibration dropped — sound already playing");
@@ -103,10 +100,9 @@ static void handle_vibration(void)
     }
 
     LOG_INF("Vibration detected — playing %s", path);
-    g_drop_vibration_events = true;
     if (audio_play_sound(path, 0)) {
-        /* Lost a race with another playback claim — its completion
-         * will run the cooldown instead. */
+        /* Lost a race with another codec claim — don't broadcast
+         * assignments for a sound we didn't play. */
         return;
     }
 
@@ -142,7 +138,6 @@ static void handle_ble_rx(const struct event *evt)
     LOG_INF("BLE RX assignment: sound=0x%02x delay=%u ms",
             evt->sound, evt->delay_ms);
 
-    g_drop_vibration_events = true;
     audio_play_sound(path, evt->delay_ms);
 }
 
@@ -234,12 +229,28 @@ int main(void)
 
         switch (evt.type) {
         case EVENT_VIBRATION:
-            handle_vibration();
+            if (g_drop_vibration_events) {
+                LOG_INF("Vibration dropped — cooldown active");
+                break;
+            } else {
+                handle_vibration();
+            }
             break;
         case EVENT_BLE_RX:
             handle_ble_rx(&evt);
             break;
+        case EVENT_AUDIO_START:
+            /*
+             * Suppress vibration triggers for the whole audio
+             * session. Stop any pending cooldown timer so a stale
+             * expiry from a previous playback can't clear the flag
+             * while this one is still running.
+             */
+            k_timer_stop(&g_vibration_cooldown_timer);
+            g_drop_vibration_events = true;
+            break;
         case EVENT_AUDIO_DONE:
+            /* Keep suppressing until the enclosure rings down. */
             k_timer_start(&g_vibration_cooldown_timer,
                           K_MSEC(VIBRATION_COOLDOWN_MS), K_NO_WAIT);
             break;

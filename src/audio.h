@@ -15,8 +15,9 @@
  *
  * Must be called before audio_play_sound() or audio_set_volume().
  *
- * @param event_q  Message queue for posting EVENT_AUDIO_DONE when
- *                 playback finishes.  May be NULL to disable.
+ * @param event_q  Message queue for posting EVENT_AUDIO_START /
+ *                 EVENT_AUDIO_DONE around each audio session
+ *                 (playback or sine test).  May be NULL to disable.
  * @return 0 on success, negative errno on failure.
  */
 int audio_init(struct k_msgq *event_q);
@@ -59,11 +60,11 @@ int audio_play_sound(const char *path, uint16_t delay_ms);
 /**
  * Start or stop the VS1053B sine test tone.
  *
- * Starting claims the codec like a playback request: trigger events
- * are ignored while the tone runs, and playback cannot start until
- * the test is stopped.  Stopping powers the codec back down and
- * posts EVENT_AUDIO_DONE so the main loop runs its vibration
- * cooldown.
+ * Starting claims the codec like a playback request and posts
+ * EVENT_AUDIO_START: trigger events are ignored while the tone runs,
+ * and playback cannot start until the test is stopped.  Stopping
+ * powers the codec back down and posts EVENT_AUDIO_DONE so the main
+ * loop runs its vibration cooldown.
  *
  * @param enable  true to start the tone, false to stop it.
  * @return 0 on success, -EBUSY if a sound is playing, -EALREADY if

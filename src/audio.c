@@ -176,21 +176,30 @@ int audio_set_volume(uint8_t percent)
 /* ------------------------------------------------------------------ */
 
 /*
- * Mark playback over and notify the main loop.  Must run on every
- * exit path of a playback request — a skipped EVENT_AUDIO_DONE
+ * Post an audio session event to the main loop.  Unlike trigger
+ * events, START and DONE must not be dropped — the main loop tracks
+ * them as pairs to run its vibration suppression.  Block until a
+ * slot frees: the main loop always drains the queue and never waits
+ * on this thread, so this is brief and cannot deadlock.
+ */
+static void post_audio_event(enum event_type type)
+{
+    if (!g_event_q) {
+        return;
+    }
+
+    struct event evt = {.type = type};
+    k_msgq_put(g_event_q, &evt, K_FOREVER);
+}
+
+/*
+ * Mark the audio session over and notify the main loop.  Must run on
+ * every exit path of a playback request — a skipped EVENT_AUDIO_DONE
  * leaves the main loop's vibration cooldown stuck forever.
  */
 static void finish_request(void)
 {
-    if (g_event_q) {
-        struct event done_evt = {.type = EVENT_AUDIO_DONE};
-        /* Unlike trigger events, AUDIO_DONE must not be dropped — the
-         * main loop restarts the vibration cooldown only on receipt.
-         * Block until a slot frees: the main loop always drains the
-         * queue and never waits on this thread, so this is brief and
-         * cannot deadlock. */
-        k_msgq_put(g_event_q, &done_evt, K_FOREVER);
-    }
+    post_audio_event(EVENT_AUDIO_DONE);
 
     /*
      * Clear the claim only after AUDIO_DONE is queued: any vibration
@@ -213,6 +222,10 @@ static void playback_thread(void *p1, void *p2, void *p3)
             continue;
         }
         LOG_INF("Received playback request: path=%s delay=%u ms", req.path, req.delay_ms);
+
+        /* The session covers the delay too — the device is committed
+         * to this sound and must not trigger on stray vibration. */
+        post_audio_event(EVENT_AUDIO_START);
 
         if (req.delay_ms > 0) {
             LOG_INF("Delaying playback for %u ms", req.delay_ms);
@@ -311,12 +324,15 @@ int audio_sine_test(bool enable)
             ret = vs1053b_sine_test(true);
         }
         if (ret) {
+            /* No START was posted, so no DONE is owed — just release
+             * the claim. */
             vs1053b_power_down();
             atomic_set(&g_playing, 0);
             return ret;
         }
 
         g_sine_active = true;
+        post_audio_event(EVENT_AUDIO_START);
         return 0;
     }
 
@@ -328,9 +344,9 @@ int audio_sine_test(bool enable)
     vs1053b_power_down();
     g_sine_active = false;
 
-    /* Release the claim exactly like a finished playback so the main
-     * loop runs its vibration cooldown — the tone shook the enclosure
-     * just like a real sound. */
+    /* End the session exactly like a finished playback — DONE arms
+     * the cooldown, since the tone shook the enclosure just like a
+     * real sound. */
     finish_request();
     return ret;
 }
