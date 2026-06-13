@@ -13,15 +13,29 @@ LOG_MODULE_REGISTER(device_config, LOG_LEVEL_INF);
 #define CONFIG_PATH SDCARD_MOUNT_POINT "/bleatbox.cfg"
 #define LINE_MAX 256
 
-int device_config_load(struct device_config *cfg)
+#define DEVICE_CONFIG_DEFAULT_ID 0xFF
+#define DEVICE_CONFIG_DEFAULT_VOLUME 80
+#define DEVICE_CONFIG_DEFAULT_DELAY_MIN_MS 0
+#define DEVICE_CONFIG_DEFAULT_DELAY_MAX_MS 2000
+#define DEVICE_CONFIG_DEFAULT_ACCEL_THRESHOLD_MG 200
+#define DEVICE_CONFIG_DEFAULT_RELAY_TTL 6
+
+
+void device_config_defaults(struct device_config *cfg)
 {
     *cfg = (struct device_config){
-        .volume = 80,
-        .delay_min_ms = 0,
-        .delay_max_ms = 2000,
-        .accel_threshold_mg = 200,
-        .relay_ttl = 2,
+        .id = DEVICE_CONFIG_DEFAULT_ID,
+        .volume = DEVICE_CONFIG_DEFAULT_VOLUME,
+        .delay_min_ms = DEVICE_CONFIG_DEFAULT_DELAY_MIN_MS,
+        .delay_max_ms = DEVICE_CONFIG_DEFAULT_DELAY_MAX_MS,
+        .accel_threshold_mg = DEVICE_CONFIG_DEFAULT_ACCEL_THRESHOLD_MG,
+        .relay_ttl = DEVICE_CONFIG_DEFAULT_RELAY_TTL,
     };
+}
+
+int device_config_load(struct device_config *cfg)
+{
+    device_config_defaults(cfg);
 
     bool has_id = false;
 

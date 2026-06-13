@@ -47,6 +47,11 @@ static atomic_t g_playing;
  * (shell thread), under the g_playing claim. */
 static bool g_sine_active;
 
+/* Set in audio_init() once the SPI bus and codec are up.  When false
+ * (init failed), every operate path is a graceful no-op so the rest of
+ * the system still runs without a usable codec. */
+static bool g_ready;
+
 #define SOUND_PATH_MAX 32
 
 struct play_request {
@@ -69,15 +74,16 @@ int audio_init(struct k_msgq *event_q)
     g_event_q = event_q;
     atomic_set(&g_playing, 0);
     g_sine_active = false;
+    g_ready = false;
 
     if (!device_is_ready(g_spi_dev)) {
-        LOG_ERR("SPI device not ready");
+        LOG_ERR("SPI device not ready — audio disabled");
         return -ENODEV;
     }
 
     int ret = vs1053b_init(g_spi_dev);
     if (ret) {
-        LOG_ERR("VS1053B init failed: %d", ret);
+        LOG_ERR("VS1053B init failed: %d — audio disabled", ret);
         return ret;
     }
 
@@ -85,6 +91,7 @@ int audio_init(struct k_msgq *event_q)
      * the first playback.  audio_set_volume() can still be called — it
      * caches the value that vs1053b_power_up() applies on wake. */
 
+    g_ready = true;
     LOG_INF("Audio initialized");
     return 0;
 }
@@ -163,11 +170,17 @@ static void apply_patch_if_present(void)
 
 int audio_get_volume(uint8_t *percent)
 {
+    if (!g_ready) {
+        return -ENODEV;
+    }
     return vs1053b_get_volume(percent);
 }
 
 int audio_set_volume(uint8_t percent)
 {
+    if (!g_ready) {
+        return -ENODEV;
+    }
     return vs1053b_set_volume(percent);
 }
 
@@ -285,6 +298,11 @@ bool audio_is_playing(void)
 
 int audio_play_sound(const char *path, uint16_t delay_ms)
 {
+    if (!g_ready) {
+        LOG_WRN("audio_play_sound — audio disabled (codec init failed)");
+        return -ENODEV;
+    }
+
     if (!atomic_cas(&g_playing, 0, 1)) {
         LOG_WRN("audio_play_sound called while already playing — ignored");
         return -EBUSY;
@@ -307,6 +325,10 @@ int audio_play_sound(const char *path, uint16_t delay_ms)
 
 int audio_sine_test(bool enable)
 {
+    if (!g_ready) {
+        return -ENODEV;
+    }
+
     if (enable) {
         if (g_sine_active) {
             return 0;

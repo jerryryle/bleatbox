@@ -91,6 +91,8 @@ static void handle_vibration(void)
         return;
     }
 
+    LOG_INF("Vibration detected");
+
     char path[32];
     int ret = sounds_get_path(SOUND_TYPE_GOAT, VIBRATION_SOUND_INDEX,
                               path, sizeof(path));
@@ -99,7 +101,6 @@ static void handle_vibration(void)
         return;
     }
 
-    LOG_INF("Vibration detected — playing %s", path);
     if (audio_play_sound(path, 0)) {
         /* Lost a race with another codec claim — don't broadcast
          * assignments for a sound we didn't play. */
@@ -160,35 +161,31 @@ int main(void)
         }
     }
 
-    /* --- Audio (SPI + VS1053B codec) --- */
-    int ret = audio_init(&event_q);
-    if (ret) {
-        return ret;
+    if (audio_init(&event_q)) {
+        LOG_ERR("Audio init failed — playback disabled");
+    }
+    sdcard_init();
+    sounds_init();
+    if (accel_init(&event_q)) {
+        LOG_ERR("Accelerometer init failed — vibration triggers disabled");
+    }
+    if (ble_init(&event_q)) {
+        LOG_ERR("BLE init failed — broadcasts and relays disabled");
     }
 
-    /* --- SD card --- */
-    ret = sdcard_mount();
-    if (ret) {
-        LOG_ERR("SD card mount failed — shell still available over USB");
-        k_sleep(K_FOREVER);
-        return 0;
-    }
-
-    /* --- Sound discovery --- */
-    ret = sounds_scan();
-    if (ret) {
-        LOG_ERR("Sound scan failed — shell still available over USB");
-        k_sleep(K_FOREVER);
-        return 0;
-    }
-
-    /* --- Device configuration --- */
     struct device_config cfg;
-    ret = device_config_load(&cfg);
-    if (ret) {
-        LOG_ERR("Device config load failed — shell still available over USB");
-        k_sleep(K_FOREVER);
-        return 0;
+    device_config_defaults(&cfg);
+
+    if (sdcard_mount()) {
+        LOG_ERR("SD card mount failed — playback disabled, using default config");
+    } else {
+        if (sounds_scan()) {
+            LOG_ERR("Sound scan failed — playback disabled");
+        }
+        if (device_config_load(&cfg)) {
+            LOG_ERR("Device config load failed — using default config");
+            device_config_defaults(&cfg);
+        }
     }
 
     /* --- Volume from config --- */
@@ -200,16 +197,12 @@ int main(void)
                      VIBRATION_SOUND_INDEX + 1,
                      sounds_get_count(SOUND_TYPE_GOAT));
 
-    /* --- Accelerometer (any-motion interrupt) --- */
-    ret = accel_init(&event_q, cfg.accel_threshold_mg);
-    if (ret) {
-        return ret;
+    /* --- Start producers (any-motion interrupt, BLE scan) --- */
+    if (accel_start(cfg.accel_threshold_mg)) {
+        LOG_ERR("Accelerometer start failed — vibration triggers disabled");
     }
-
-    /* --- BLE --- */
-    ret = ble_init(cfg.id, &event_q, cfg.relay_ttl);
-    if (ret) {
-        return ret;
+    if (ble_start(cfg.id, cfg.relay_ttl)) {
+        LOG_ERR("BLE start failed — broadcasts and relays disabled");
     }
 
     g_drop_vibration_events = false;
@@ -231,7 +224,6 @@ int main(void)
         case EVENT_VIBRATION:
             if (g_drop_vibration_events) {
                 LOG_INF("Vibration dropped — cooldown active");
-                break;
             } else {
                 handle_vibration();
             }

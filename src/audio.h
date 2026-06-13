@@ -13,7 +13,9 @@
 /**
  * Initialize the audio subsystem (SPI bus and VS1053B codec).
  *
- * Must be called before audio_play_sound() or audio_set_volume().
+ * Must be called before any other audio function.  On failure the
+ * module stays disabled and every other entry point becomes a graceful
+ * no-op returning -ENODEV, so the caller may continue without audio.
  *
  * @param event_q  Message queue for posting EVENT_AUDIO_START /
  *                 EVENT_AUDIO_DONE around each audio session
@@ -53,7 +55,8 @@ int audio_set_volume(uint8_t percent);
  *                  The delay runs on the audio thread; audio_is_playing()
  *                  returns true for the entire duration.
  * @return 0 if the request was accepted, -EBUSY if a sound is
- *         already playing (the request is ignored).
+ *         already playing (the request is ignored), -ENODEV if the
+ *         audio subsystem failed to initialize.
  */
 int audio_play_sound(const char *path, uint16_t delay_ms);
 

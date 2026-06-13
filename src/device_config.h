@@ -17,6 +17,14 @@ struct device_config {
 };
 
 /**
+ * Populate @p cfg with built-in defaults (no peers, default id).
+ *
+ * Used by device_config_load() before parsing, and by callers that need
+ * a usable config when the SD card or config file is unavailable.
+ */
+void device_config_defaults(struct device_config *cfg);
+
+/**
  * Load device configuration from /SD:/bleatbox.cfg.
  *
  * @param[out] cfg  Populated on success.

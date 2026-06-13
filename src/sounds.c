@@ -18,6 +18,12 @@ LOG_MODULE_REGISTER(sounds, LOG_LEVEL_INF);
 static uint8_t g_goat_count;
 static uint8_t g_misc_count;
 
+void sounds_init(void)
+{
+    g_goat_count = 0;
+    g_misc_count = 0;
+}
+
 int sounds_scan(void)
 {
     struct fs_dir_t dir;
@@ -34,9 +40,6 @@ int sounds_scan(void)
     bool misc_present[100] = {false};
     int goat_max = -1;
     int misc_max = -1;
-
-    g_goat_count = 0;
-    g_misc_count = 0;
 
     while (fs_readdir(&dir, &entry) == 0 && entry.name[0] != '\0') {
         if (entry.type != FS_DIR_ENTRY_FILE) {

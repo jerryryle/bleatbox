@@ -67,6 +67,10 @@ static uint8_t g_relay_ttl;
 static uint8_t g_seq;
 static volatile bool g_adv_active;
 
+/* Set true once ble_init() has enabled the stack and created the adv
+ * set; gates ble_start() so it never scans on an uninitialized stack. */
+static bool g_ble_ready;
+
 #define MFG_DATA_MAX_SIZE (HEADER_SIZE + BLE_MAX_ASSIGNMENTS * ASSIGNMENT_ENTRY_SIZE)
 static uint8_t g_mfg_data[MFG_DATA_MAX_SIZE];
 
@@ -426,15 +430,20 @@ static void scan_recv_cb(const struct bt_le_scan_recv_info *info,
 /* Initialization                                                     */
 /* ------------------------------------------------------------------ */
 
-int ble_init(uint8_t device_id, struct k_msgq *event_q, uint8_t relay_ttl)
+int ble_init(struct k_msgq *event_q)
 {
-    g_local_device_id = device_id;
     g_evt_q = event_q;
-    g_relay_ttl = relay_ttl;
     g_seq = 0;
     g_adv_active = false;
     g_relay_len = 0;
     g_relay_new_ttl = 0;
+    g_ble_ready = false;
+
+    /* Real values arrive in ble_start(); scanning is off until then,
+     * so the callbacks that read these never run with the defaults. */
+    g_local_device_id = 0;
+    g_relay_ttl = 0;
+
     broadcast_log_init();
     k_work_init(&g_relay_work, relay_work_handler);
     k_work_init(&g_resume_scan_work, resume_scan_work_handler);
@@ -472,7 +481,20 @@ int ble_init(uint8_t device_id, struct k_msgq *event_q, uint8_t relay_ttl)
 
     bt_le_scan_cb_register(&g_scan_cbs);
 
-    ret = bt_le_scan_start(&g_scan_params, NULL);
+    g_ble_ready = true;
+    return 0;
+}
+
+int ble_start(uint8_t device_id, uint8_t relay_ttl)
+{
+    if (!g_ble_ready) {
+        return -ENODEV;
+    }
+
+    g_local_device_id = device_id;
+    g_relay_ttl = relay_ttl;
+
+    int ret = bt_le_scan_start(&g_scan_params, NULL);
     if (ret) {
         LOG_ERR("Scanning failed to start: %d", ret);
         return ret;

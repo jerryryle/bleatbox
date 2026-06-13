@@ -13,13 +13,27 @@
 #include <zephyr/drivers/sensor.h>
 
 /**
- * Initialize the LIS2DW12 accelerometer and wakeup interrupt.
+ * Initialize the LIS2DW12 accelerometer module.
+ *
+ * Stores the event queue and verifies the device is ready.  Does not
+ * configure or arm the wakeup interrupt — call accel_start() for that.
  *
  * @param event_q       Message queue to push EVENT_VIBRATION events into.
- * @param threshold_mg  Wakeup threshold in milli-g (e.g. 200 = 200 mg).
  * @return 0 on success, negative errno on failure.
  */
-int accel_init(struct k_msgq *event_q, uint16_t threshold_mg);
+int accel_init(struct k_msgq *event_q);
+
+/**
+ * Configure the wakeup threshold and arm the motion trigger.
+ *
+ * After this call the accelerometer begins pushing EVENT_VIBRATION
+ * events into the queue passed to accel_init().
+ *
+ * @param threshold_mg  Wakeup threshold in milli-g (e.g. 200 = 200 mg).
+ * @return 0 on success, negative errno on failure (including -ENODEV
+ *         if accel_init() did not succeed).
+ */
+int accel_start(uint16_t threshold_mg);
 
 /**
  * Read a single XYZ acceleration sample.
