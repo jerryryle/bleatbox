@@ -22,6 +22,7 @@
 #include "device_config.h"
 #include "events.h"
 #include "accel.h"
+#include "battery.h"
 #include "sdcard.h"
 #include "sounds.h"
 #include "audio.h"
@@ -168,6 +169,9 @@ int main(void)
     sounds_init();
     if (accel_init(&event_q)) {
         LOG_ERR("Accelerometer init failed — vibration triggers disabled");
+    }
+    if (battery_init()) {
+        LOG_ERR("Battery monitor init failed — battery reads disabled");
     }
     if (ble_init(&event_q)) {
         LOG_ERR("BLE init failed — broadcasts and relays disabled");

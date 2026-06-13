@@ -22,7 +22,16 @@
  *   I2C bus (feather header):
  *     SDA  = P0.12
  *     SCL  = P0.11
+ *
+ *   Battery sense (Feather rev D):
+ *     P0.29 = AIN5  ->  VBAT through an on-board 100k/100k divider.
+ *                       The divider (the `vbatt` node) is defined by the
+ *                       board devicetree; this overlay only adds the
+ *                       matching SAADC channel.
  */
+
+#include <zephyr/dt-bindings/adc/adc.h>
+#include <zephyr/dt-bindings/adc/nrf-saadc.h>
 
 / {
 	aliases {
@@ -46,6 +55,25 @@
 
 &uart0 {
 	status = "disabled";
+};
+
+/*
+ * SAADC channel for the battery-sense divider on AIN5 (P0.29).
+ * Gain 1/6 with the 0.6 V internal reference gives a 3.6 V full-scale
+ * range, comfortably above the divided VBAT (~2.1 V at 4.2 V battery).
+ */
+&adc {
+	#address-cells = <1>;
+	#size-cells = <0>;
+
+	channel@5 {
+		reg = <5>;
+		zephyr,gain = "ADC_GAIN_1_6";
+		zephyr,reference = "ADC_REF_INTERNAL";
+		zephyr,acquisition-time = <ADC_ACQ_TIME(ADC_ACQ_TIME_MICROSECONDS, 10)>;
+		zephyr,input-positive = <NRF_SAADC_AIN5>;
+		zephyr,resolution = <12>;
+	};
 };
 
 &i2c0 {
