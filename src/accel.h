@@ -36,6 +36,18 @@ int accel_init(struct k_msgq *event_q);
 int accel_start(uint16_t threshold_mg);
 
 /**
+ * Update the wakeup threshold on the live accelerometer.
+ *
+ * Applies immediately without re-arming the trigger; does not persist
+ * to the SD-card config.
+ *
+ * @param threshold_mg  Wakeup threshold in milli-g (e.g. 200 = 200 mg).
+ * @return 0 on success, negative errno on failure (including -ENODEV
+ *         if accel_init() did not succeed).
+ */
+int accel_set_threshold(uint16_t threshold_mg);
+
+/**
  * Read a single XYZ acceleration sample.
  *
  * @param[out] x  X-axis acceleration.

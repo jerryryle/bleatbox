@@ -63,7 +63,7 @@ int accel_init(struct k_msgq *event_q)
     return 0;
 }
 
-int accel_start(uint16_t threshold_mg)
+int accel_set_threshold(uint16_t threshold_mg)
 {
     if (!g_ready) {
         return -ENODEV;
@@ -81,6 +81,18 @@ int accel_start(uint16_t threshold_mg)
                               SENSOR_ATTR_UPPER_THRESH, &threshold_val);
     if (ret) {
         LOG_ERR("Failed to set wakeup threshold: %d", ret);
+    }
+    return ret;
+}
+
+int accel_start(uint16_t threshold_mg)
+{
+    if (!g_ready) {
+        return -ENODEV;
+    }
+
+    int ret = accel_set_threshold(threshold_mg);
+    if (ret) {
         return ret;
     }
 

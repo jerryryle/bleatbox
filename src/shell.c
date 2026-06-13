@@ -124,18 +124,6 @@ static int cmd_sinetest(const struct shell *sh, size_t argc, char **argv)
     return -EINVAL;
 }
 
-SHELL_CMD_ARG_REGISTER(play, NULL,
-                       "Play a sound: play goat|misc <index>",
-                       cmd_play, 3, 0);
-
-SHELL_CMD_ARG_REGISTER(sinetest, NULL,
-                       "VS1053B sine test: sinetest on|off",
-                       cmd_sinetest, 2, 0);
-
-SHELL_CMD_ARG_REGISTER(volume, NULL,
-                       "Get or set volume: volume [0-100]",
-                       cmd_volume, 1, 1);
-
 static int cmd_accel(const struct shell *sh, size_t argc, char **argv)
 {
     unsigned long count = 200;
@@ -190,6 +178,43 @@ static int cmd_accel(const struct shell *sh, size_t argc, char **argv)
     return 0;
 }
 
+
+static int cmd_threshold(const struct shell *sh, size_t argc, char **argv)
+{
+    char *end;
+    unsigned long mg = strtoul(argv[1], &end, 10);
+    if (end == argv[1] || mg == 0 || mg > UINT16_MAX) {
+        shell_error(sh, "Threshold must be 1-%u mg", UINT16_MAX);
+        return -EINVAL;
+    }
+
+    int ret = accel_set_threshold((uint16_t)mg);
+    if (ret) {
+        shell_error(sh, "Failed to set threshold: %d", ret);
+        return ret;
+    }
+
+    shell_print(sh, "Vibration threshold set to %lu mg", mg);
+    return 0;
+}
+
+SHELL_CMD_ARG_REGISTER(play, NULL,
+                       "Play a sound: play goat|misc <index>",
+                       cmd_play, 3, 0);
+
+SHELL_CMD_ARG_REGISTER(sinetest, NULL,
+                       "VS1053B sine test: sinetest on|off",
+                       cmd_sinetest, 2, 0);
+
+SHELL_CMD_ARG_REGISTER(volume, NULL,
+                       "Get or set volume: volume [0-100]",
+                       cmd_volume, 1, 1);
+
 SHELL_CMD_ARG_REGISTER(accel, NULL,
                        "Sample accelerometer: accel [count] (default 200)",
                        cmd_accel, 1, 1);
+
+SHELL_CMD_ARG_REGISTER(threshold, NULL,
+                       "Set vibration threshold in mg: "
+                       "threshold <mg>",
+                       cmd_threshold, 2, 0);
