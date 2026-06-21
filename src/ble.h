@@ -11,11 +11,7 @@
 #include <zephyr/kernel.h>
 #include <stdint.h>
 
-#include "assignments.h"
 #include "ble_encode.h"
-
-/** Maximum assignments that fit in one broadcast packet. */
-#define BLE_MAX_ASSIGNMENTS 30
 
 /**
  * Initialize Bluetooth: enable the stack, create the extended
@@ -33,8 +29,9 @@ int ble_init(struct k_msgq *event_q);
  * After this call the BLE module pushes EVENT_BLE_RX events into the
  * queue passed to ble_init() and relays packets up to @p relay_ttl hops.
  *
- * @param device_id  This device's ID from the SD-card config (used to
- *                    recognize our entry in received broadcasts).
+ * @param device_id  This device's 1-based ID from the SD-card config.  It
+ *                    stamps our broadcasts and selects our message slot
+ *                    (id - 1); ids of 0 or above the slot count only relay.
  * @param relay_ttl  Maximum relay hops.  0 disables relaying.
  * @return 0 on success, negative errno on failure (including -ENODEV
  *         if ble_init() did not succeed).
@@ -42,18 +39,15 @@ int ble_init(struct k_msgq *event_q);
 int ble_start(uint8_t device_id, uint8_t relay_ttl);
 
 /**
- * Broadcast the given assignments via BLE extended advertising.
+ * Broadcast a 16-byte message payload via BLE extended advertising.
  *
- * The BLE module stamps the packet with this device as originator,
- * an auto-incremented sequence number, and the configured relay TTL.
+ * The BLE module stamps the packet with this device as originator, an
+ * auto-incremented sequence number, and the configured relay TTL.  Build the
+ * payload with the message_* helpers (e.g. via compose_message()).
  *
- * @param assignments  Array of assignments to broadcast.
- * @param count        Number of entries in @p assignments.
- *                     Must not exceed BLE_MAX_ASSIGNMENTS.
- * @return 0 on success, -EINVAL if count is too large, or a
- *         negative errno on BLE failure.
+ * @param payload  16-byte message payload to send.
+ * @return 0 on success, or a negative errno on BLE failure.
  */
-int ble_advertise_assignments(const struct assignment *assignments,
-                              uint8_t count);
+int ble_broadcast_message(const uint8_t payload[16]);
 
 #endif /* BLE_H_ */

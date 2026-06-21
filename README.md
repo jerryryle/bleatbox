@@ -204,25 +204,21 @@ marketplace. This single pack installs:
 
 ## Device Configuration
 
-Each device reads its identity and peer list from a config file on the SD card
-at boot. This means every device runs the same firmware — only the SD card
-contents differ.
+Each device reads its identity from a config file on the SD card at boot. This
+means every device runs the same firmware — only the SD card contents differ.
 
 ### Config file format
 
 Create a plain text file named `bleatbox.cfg` in the root of the SD card:
 
 ```
-# This device's ID (one hex byte)
-id 0xa3
-
-# IDs of the other devices in the network
-peers 0x01 0x42 0xb7 0x05 0x9c
+# This device's ID (one hex byte; 0xFE is reserved)
+id 01
 
 # Playback volume (0 = silent, 100 = max, default 80)
 volume 80
 
-# Random per-peer delay range in ms before assigned playback (defaults 0-2000)
+# Random delay range in ms before assigned playback (defaults 0-2000)
 delay_min 0
 delay_max 2000
 
@@ -233,14 +229,16 @@ accel_threshold 150
 relay_ttl 2
 ```
 
-- **`id`** — a single hex byte (`0x00`–`0xFF`) that uniquely identifies this
-  device on the network.
-- **`peers`** — space-separated hex bytes for every *other* device in the
-  network. Up to 30 peers are supported.
+- **`id`** — a single hex byte that uniquely identifies this device; it must
+  differ across devices, and `0xFE` is reserved. It serves two roles: it stamps
+  the device's own broadcasts so the mesh can deduplicate them, and it is the
+  device's **1-based position** — ids `1`–`6` play that slot (`id - 1`) in every
+  BLE message. An id of `0` or above `6` plays nothing it receives, but still
+  relays. Up to six devices play.
 - **`volume`** *(optional)* — playback volume, 0–100. Defaults to 80 if
   omitted.
 - **`delay_min`** / **`delay_max`** *(optional)* — bounds in milliseconds for
-  the random playback delay assigned to each peer when this device triggers.
+  the random playback delay assigned to each slot when this device triggers.
   Default 0–2000; `delay_min` must not exceed `delay_max`.
 - **`accel_threshold`** *(optional)* — wakeup detection threshold in
   milli-g. Defaults to 200 if omitted. Use the `accel` shell command to find
@@ -251,25 +249,52 @@ relay_ttl 2
 - Lines starting with `#` are comments.
 - Hex values accept a `0x` prefix or bare hex digits.
 
-Both `id` and `peers` are required. All other fields are optional. If the file
-is missing or malformed, the firmware logs an error and halts.
+Only `id` is required. All other fields are optional. If the file is missing or
+malformed, the firmware logs an error and halts.
 
 ### Provisioning workflow
 
-1. Choose a unique 1-byte ID for each device (e.g. `0x01` through `0x05` for a
-   five-device network).
-2. For each device, create a `bleatbox.cfg` with that device's `id` and the IDs
-   of all the *other* devices as `peers`.
-3. Copy the file to the device's SD card alongside the mp3 files.
-4. Boot the device. The log output confirms the loaded configuration:
+1. Give each device a unique 1-byte ID. The playing devices are `0x01`–`0x06`
+   (id `N` plays slot `N - 1`); extra relay-only devices can use any other id
+   except the reserved `0xFE`.
+2. Copy the file to the device's SD card alongside the mp3 files.
+3. Boot the device. The log output confirms the loaded configuration:
    ```
-   [00:00:00.xxx,xxx] <inf> device_config: Device ID: 0xa3
-   [00:00:00.xxx,xxx] <inf> device_config: Peers:
-                                           01 42 b7 05 9c
+   [00:00:00.xxx,xxx] <inf> device_config: Device ID: 0x01
+   [00:00:00.xxx,xxx] <inf> ble: BLE slot: 0
    ```
 
 To change a device's configuration, update `bleatbox.cfg` on its SD card and
 reboot.
+
+### Messaging format and sending from macOS
+
+Every BLE message is the same 16-byte payload of six positional slots — a 7-bit
+sound and 12-bit delay each, plus a global 2-bit command and an 8-bit sequence
+number. A tissue pull fills the slots with random sounds and broadcasts it;
+each device plays the slot matching its id (`id - 1`). Up to six devices are
+addressed.
+
+Devices exchange this as manufacturer-specific data, which macOS CoreBluetooth
+cannot send (it silently drops it). It *can* advertise 128-bit Service UUIDs, so
+the same payload is sent from a Mac as a 128-bit UUID alongside a fixed 16-bit
+marker UUID. The first device to hear it re-broadcasts it as the normal mesh
+packet, so it **relays across the whole herd** — you only need to be near one
+device:
+
+```
+uv run scripts/bleat_send.py --id 1 --sound 1 --delay 1000 \
+                             --id 6 --sound 3 --delay 1500
+```
+
+The script declares its dependency inline ([PEP 723](https://peps.python.org/pep-0723/)),
+so [`uv run`](https://docs.astral.sh/uv/) fetches PyObjC into an ephemeral
+environment automatically — no manual install or virtualenv needed. (Without uv:
+`pip install pyobjc-framework-CoreBluetooth` then run with `python`.)
+
+A `--sound` of `127` — or any id you don't name — stays silent. The sender
+advertises a short burst and increments a persisted sequence number each run, so
+repeated sends fire once each.
 
 ## Shell Commands
 

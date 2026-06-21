@@ -1,14 +1,15 @@
 /*
  * BLE subsystem — extended advertising and scanning with relay support.
  *
- * Transmit: serializes caller-provided assignments into a manufacturer-
- * data payload and broadcasts via BLE extended advertising (5 events
- * over ~150 ms).
+ * One on-air format: a 6-byte relay header plus a 16-byte message payload
+ * (six positional slots).  Transmit broadcasts it via extended advertising
+ * (5 events over ~150 ms).  macOS, which can only advertise Service UUIDs,
+ * sends the same payload as a 128-bit UUID; the first device to hear it
+ * re-emits the manufacturer-data form so the mesh relay carries it onward.
  *
  * Receive: passively scans for matching broadcasts, deduplicates by
- * (originator, seq), parses this device's assignment, posts an
- * EVENT_BLE_RX to the main event queue, and relays the packet if
- * the TTL has not expired.
+ * (originator, seq), plays this device's slot, posts an EVENT_BLE_RX to the
+ * main event queue, and relays the packet if the TTL has not expired.
  */
 
 #include <zephyr/kernel.h>
@@ -24,6 +25,7 @@
 #include "broadcast_log.h"
 #include "device_config.h"
 #include "events.h"
+#include "message.h"
 
 LOG_MODULE_REGISTER(ble, LOG_LEVEL_INF);
 
@@ -37,16 +39,14 @@ LOG_MODULE_REGISTER(ble, LOG_LEVEL_INF);
 #define COMPANY_ID_HI 0xFF
 #define MAGIC_BYTE 0x42
 
-#define ASSIGNMENT_ENTRY_SIZE 4 /* device_id(1) + sound(1) + delay(2) */
 #define HEADER_SIZE 6 /* company_id(2) + magic(1) + originator(1) + seq(1) + ttl(1) */
+#define MESSAGE_PAYLOAD_LEN 16
+#define MESSAGE_MFG_SIZE (HEADER_SIZE + MESSAGE_PAYLOAD_LEN)
 
 /* AD structure: 1 byte length + 1 byte type + manufacturer data */
 #define BLE_AD_OVERHEAD 2
-BUILD_ASSERT(BLE_AD_OVERHEAD + HEADER_SIZE + BLE_MAX_ASSIGNMENTS * ASSIGNMENT_ENTRY_SIZE
-             <= CONFIG_BT_CTLR_ADV_DATA_LEN_MAX,
-             "BLE_MAX_ASSIGNMENTS exceeds controller advertising data capacity");
-BUILD_ASSERT(BLE_MAX_ASSIGNMENTS >= DEVICE_CONFIG_MAX_PEERS,
-             "every configured peer must fit in one broadcast");
+BUILD_ASSERT(BLE_AD_OVERHEAD + MESSAGE_MFG_SIZE <= CONFIG_BT_CTLR_ADV_DATA_LEN_MAX,
+             "message packet exceeds controller advertising data capacity");
 
 /* Offsets within the header */
 #define HDR_OFF_COMPANY_LO 0
@@ -55,6 +55,21 @@ BUILD_ASSERT(BLE_MAX_ASSIGNMENTS >= DEVICE_CONFIG_MAX_PEERS,
 #define HDR_OFF_ORIGINATOR 3
 #define HDR_OFF_SEQ        4
 #define HDR_OFF_TTL        5
+
+/* ------------------------------------------------------------------ */
+/* macOS Service-UUID ingress                                         */
+/* ------------------------------------------------------------------ */
+
+/* macOS can't send manufacturer data, so it advertises the message payload
+ * as a 128-bit Service UUID alongside this fixed 16-bit marker UUID, which
+ * identifies the advert as ours.  See message.h. */
+#define MESSAGE_MARKER_UUID16 0xFB42
+
+/* CoreBluetooth re-advertises continuously, so the Mac sends a short burst
+ * per message (one stable seq).  The (originator, seq) dedup collapses the
+ * burst; this guard additionally suppresses re-gatewaying the same seq if
+ * the shared dedup ring evicts it mid-burst in a busy mesh. */
+#define MESSAGE_DEBOUNCE_MS 4000
 
 /* ------------------------------------------------------------------ */
 /* Module state                                                       */
@@ -67,11 +82,18 @@ static uint8_t g_relay_ttl;
 static uint8_t g_seq;
 static volatile bool g_adv_active;
 
+/* This device's slot, derived from its id (MESSAGE_NO_SLOT = does not play,
+ * but still relays), plus the last macOS-message seq we gatewayed and when,
+ * to suppress re-flooding the same continuously-advertised seq. */
+static uint8_t g_local_slot;
+static uint8_t g_last_uuid_seq;
+static int64_t g_last_uuid_time;
+
 /* Set true once ble_init() has enabled the stack and created the adv
  * set; gates ble_start() so it never scans on an uninitialized stack. */
 static bool g_ble_ready;
 
-#define MFG_DATA_MAX_SIZE (HEADER_SIZE + BLE_MAX_ASSIGNMENTS * ASSIGNMENT_ENTRY_SIZE)
+#define MFG_DATA_MAX_SIZE MESSAGE_MFG_SIZE
 static uint8_t g_mfg_data[MFG_DATA_MAX_SIZE];
 
 /*
@@ -213,21 +235,14 @@ static int start_advertising(uint8_t mfg_data_size)
     return 0;
 }
 
-int ble_advertise_assignments(const struct assignment *assignments,
-                              uint8_t count)
+int ble_broadcast_message(const uint8_t payload[16])
 {
-    if (count > BLE_MAX_ASSIGNMENTS) {
-        LOG_ERR("Too many assignments (%u > %u)", count,
-                BLE_MAX_ASSIGNMENTS);
-        return -EINVAL;
-    }
-
     k_mutex_lock(&g_tx_mutex, K_FOREVER);
 
     /*
-     * A relay burst may be in flight.  The local broadcast carries
-     * fresh assignments and takes priority — stop the relay (which is
-     * best-effort) rather than failing with -EALREADY.
+     * A relay burst may be in flight.  This fresh local message takes
+     * priority — stop the relay (which is best-effort) rather than
+     * failing with -EALREADY.
      */
     if (g_adv_active) {
         int err = bt_le_ext_adv_stop(g_adv_set);
@@ -249,35 +264,23 @@ int ble_advertise_assignments(const struct assignment *assignments,
     /* Record in dedup table so we don't process our own broadcast */
     broadcast_log_record(g_local_device_id, seq);
 
-    /* Build header */
     g_mfg_data[HDR_OFF_COMPANY_LO] = COMPANY_ID_LO;
     g_mfg_data[HDR_OFF_COMPANY_HI] = COMPANY_ID_HI;
     g_mfg_data[HDR_OFF_MAGIC] = MAGIC_BYTE;
     g_mfg_data[HDR_OFF_ORIGINATOR] = g_local_device_id;
     g_mfg_data[HDR_OFF_SEQ] = seq;
     g_mfg_data[HDR_OFF_TTL] = g_relay_ttl;
+    memcpy(&g_mfg_data[HEADER_SIZE], payload, MESSAGE_PAYLOAD_LEN);
 
-    /* Build assignment entries */
-    for (int i = 0; i < count; i++) {
-        int offset = HEADER_SIZE + i * ASSIGNMENT_ENTRY_SIZE;
-
-        g_mfg_data[offset + 0] = assignments[i].device_id;
-        g_mfg_data[offset + 1] = ble_sound_encode(SOUND_TYPE_GOAT,
-                                                     assignments[i].sound);
-        sys_put_le16(assignments[i].delay_ms, &g_mfg_data[offset + 2]);
-    }
-
-    uint8_t mfg_data_size = HEADER_SIZE + count * ASSIGNMENT_ENTRY_SIZE;
-
-    int ret = start_advertising(mfg_data_size);
+    int ret = start_advertising(MESSAGE_MFG_SIZE);
     k_mutex_unlock(&g_tx_mutex);
 
     if (ret) {
         return ret;
     }
 
-    LOG_INF("BLE broadcast: originator=0x%02x seq=%u ttl=%u entries=%u",
-            g_local_device_id, seq, g_relay_ttl, count);
+    LOG_INF("BLE broadcast: originator=0x%02x seq=%u ttl=%u",
+            g_local_device_id, seq, g_relay_ttl);
     return 0;
 }
 
@@ -340,9 +343,41 @@ static void schedule_relay(const uint8_t *data, uint8_t data_len, uint8_t ttl)
     }
 }
 
+static void post_play_event(uint8_t encoded_sound, uint16_t delay_ms)
+{
+    struct event evt = {
+        .type = EVENT_BLE_RX,
+        .sound = encoded_sound,
+        .delay_ms = delay_ms,
+    };
+    k_msgq_put(g_evt_q, &evt, K_NO_WAIT);
+}
+
+/*
+ * Act on our own slot in a 16-byte message payload.  No-op when the global
+ * command is not "play", or our slot is silent or unassigned (a slotless
+ * device still relays — it just stays quiet itself).
+ */
+static void act_on_message(const uint8_t *payload)
+{
+    if (message_get_command(payload) != MESSAGE_CMD_PLAY) {
+        return;
+    }
+
+    struct message_slot s;
+    message_parse_slot(payload, g_local_slot, &s);
+    if (!s.play) {
+        return;
+    }
+
+    post_play_event(ble_sound_encode(SOUND_TYPE_GOAT, s.sound), s.delay_ms);
+    LOG_INF("Message play: slot=%u sound=%u delay=%u ms",
+            g_local_slot, s.sound, s.delay_ms);
+}
+
 static void handle_mfg_data(const uint8_t *data, uint8_t data_len)
 {
-    if (data_len < HEADER_SIZE) {
+    if (data_len != MESSAGE_MFG_SIZE) {
         return;
     }
 
@@ -365,40 +400,81 @@ static void handle_mfg_data(const uint8_t *data, uint8_t data_len)
         return;
     }
 
-    int num_entries = (data_len - HEADER_SIZE) / ASSIGNMENT_ENTRY_SIZE;
-    for (int i = 0; i < num_entries; i++) {
-        int off = HEADER_SIZE + i * ASSIGNMENT_ENTRY_SIZE;
-        if (data[off] != g_local_device_id) {
-            continue;
-        }
-
-        uint8_t sound = data[off + 1];
-        uint16_t delay = sys_get_le16(&data[off + 2]);
-
-        struct event evt = {
-            .type = EVENT_BLE_RX,
-            .sound = sound,
-            .delay_ms = delay,
-        };
-
-        k_msgq_put(g_evt_q, &evt, K_NO_WAIT);
-        break;
-    }
+    act_on_message(&data[HEADER_SIZE]);
 
     if (ttl > 0) {
         schedule_relay(data, data_len, ttl - 1);
     }
 }
 
+/* True if the 16-bit Service UUID list contains @p uuid. */
+static bool uuid16_list_has(const uint8_t *data, uint8_t len, uint16_t uuid)
+{
+    for (uint8_t i = 0; i + 2 <= len; i += 2) {
+        if (sys_get_le16(&data[i]) == uuid) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/*
+ * A macOS-originated message arrived as a Service-UUID advert.  This is the
+ * ingress: play our own slot and re-emit it as a manufacturer-data packet so
+ * the existing relay path floods it across the mesh.  A slotless device does
+ * not play but still gateways, bridging the message to devices out of the
+ * Mac's radio range.
+ */
+static void handle_message_uuid(const uint8_t *payload)
+{
+    uint8_t seq = message_get_seq(payload);
+
+    /* The Mac advertises one stable seq per burst.  Suppress re-gatewaying
+     * it even if the shared dedup ring evicts (0xFE, seq) mid-burst in a
+     * busy mesh. */
+    int64_t now = k_uptime_get();
+    if (g_last_uuid_time != 0 && seq == g_last_uuid_seq &&
+        now - g_last_uuid_time < MESSAGE_DEBOUNCE_MS) {
+        return;
+    }
+
+    /* Same (originator, seq) dedup as the relayed packet: if a neighbor's
+     * relay of this message already reached us, don't gateway it again. */
+    if (broadcast_log_check_and_record(MESSAGE_EXT_ORIGINATOR, seq)) {
+        return;
+    }
+
+    g_last_uuid_seq = seq;
+    g_last_uuid_time = now;
+
+    act_on_message(payload);
+
+    uint8_t pkt[MESSAGE_MFG_SIZE];
+    pkt[HDR_OFF_COMPANY_LO] = COMPANY_ID_LO;
+    pkt[HDR_OFF_COMPANY_HI] = COMPANY_ID_HI;
+    pkt[HDR_OFF_MAGIC] = MAGIC_BYTE;
+    pkt[HDR_OFF_ORIGINATOR] = MESSAGE_EXT_ORIGINATOR;
+    pkt[HDR_OFF_SEQ] = seq;
+    pkt[HDR_OFF_TTL] = g_relay_ttl; /* relay handler stamps the real ttl */
+    memcpy(&pkt[HEADER_SIZE], payload, MESSAGE_PAYLOAD_LEN);
+
+    LOG_INF("macOS message seq=%u — flooding mesh (ttl=%u)", seq, g_relay_ttl);
+    schedule_relay(pkt, sizeof(pkt), g_relay_ttl);
+}
+
 static void scan_recv_cb(const struct bt_le_scan_recv_info *info,
                          struct net_buf_simple *buf)
 {
-    if (buf->len < HEADER_SIZE + 2) {
+    if (buf->len < 2) {
         return;
     }
 
     struct net_buf_simple_state state;
     net_buf_simple_save(buf, &state);
+
+    bool handled_mfg = false;
+    bool marker_seen = false;
+    const uint8_t *uuid_payload = NULL;
 
     while (buf->len > 1) {
         uint8_t ad_len = net_buf_simple_pull_u8(buf);
@@ -408,19 +484,35 @@ static void scan_recv_cb(const struct bt_le_scan_recv_info *info,
 
         uint8_t ad_type = net_buf_simple_pull_u8(buf);
         uint8_t data_len = ad_len - 1;
-
-        if (ad_type != BT_DATA_MANUFACTURER_DATA ||
-            data_len < HEADER_SIZE ||
-            data_len > buf->len ||
-            (data_len - HEADER_SIZE) % ASSIGNMENT_ENTRY_SIZE != 0) {
-            if (data_len <= buf->len) {
-                net_buf_simple_pull(buf, data_len);
-            }
-            continue;
+        if (data_len > buf->len) {
+            break;
         }
 
-        handle_mfg_data(buf->data, data_len);
-        break;
+        const uint8_t *data = buf->data;
+
+        /* A packet is either a mesh broadcast (manufacturer data) or a
+         * macOS message (Service UUIDs), never both, so handle and stop. */
+        if (ad_type == BT_DATA_MANUFACTURER_DATA &&
+            data_len == MESSAGE_MFG_SIZE) {
+            handle_mfg_data(data, data_len);
+            handled_mfg = true;
+            break;
+        }
+
+        if ((ad_type == BT_DATA_UUID16_ALL || ad_type == BT_DATA_UUID16_SOME) &&
+            uuid16_list_has(data, data_len, MESSAGE_MARKER_UUID16)) {
+            marker_seen = true;
+        } else if ((ad_type == BT_DATA_UUID128_ALL ||
+                    ad_type == BT_DATA_UUID128_SOME) &&
+                   data_len == MESSAGE_PAYLOAD_LEN) {
+            uuid_payload = data;
+        }
+
+        net_buf_simple_pull(buf, data_len);
+    }
+
+    if (!handled_mfg && marker_seen && uuid_payload != NULL) {
+        handle_message_uuid(uuid_payload);
     }
 
     net_buf_simple_restore(buf, &state);
@@ -443,6 +535,9 @@ int ble_init(struct k_msgq *event_q)
      * so the callbacks that read these never run with the defaults. */
     g_local_device_id = 0;
     g_relay_ttl = 0;
+    g_local_slot = MESSAGE_NO_SLOT;
+    g_last_uuid_seq = 0;
+    g_last_uuid_time = 0;
 
     broadcast_log_init();
     k_work_init(&g_relay_work, relay_work_handler);
@@ -493,6 +588,7 @@ int ble_start(uint8_t device_id, uint8_t relay_ttl)
 
     g_local_device_id = device_id;
     g_relay_ttl = relay_ttl;
+    g_local_slot = message_slot_for_id(device_id);
 
     int ret = bt_le_scan_start(&g_scan_params, NULL);
     if (ret) {
@@ -502,6 +598,11 @@ int ble_start(uint8_t device_id, uint8_t relay_ttl)
     LOG_INF("BLE scanning started (interval=%u window=%u x 0.625ms)",
             SCAN_INTERVAL, SCAN_WINDOW);
     LOG_INF("BLE relay TTL: %u", g_relay_ttl);
+    if (g_local_slot == MESSAGE_NO_SLOT) {
+        LOG_INF("BLE slot: none (relay only)");
+    } else {
+        LOG_INF("BLE slot: %u", g_local_slot);
+    }
 
     return 0;
 }
