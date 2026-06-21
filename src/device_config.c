@@ -6,6 +6,7 @@
 
 #include "device_config.h"
 #include "device_config_parse.h"
+#include "message.h"
 #include "sdcard.h"
 
 LOG_MODULE_REGISTER(device_config, LOG_LEVEL_INF);
@@ -97,18 +98,11 @@ int device_config_load(struct device_config *cfg)
         LOG_ERR("Config file missing 'id'");
         return -EINVAL;
     }
-    if (cfg->peer_count == 0) {
-        LOG_ERR("Config file missing 'peers'");
+    if (cfg->id == MESSAGE_EXT_ORIGINATOR) {
+        /* Reserved as the originator of macOS-originated messages; a device
+         * using it would collide with that message's mesh dedup key. */
+        LOG_ERR("Config 'id' 0x%02x is reserved", MESSAGE_EXT_ORIGINATOR);
         return -EINVAL;
-    }
-    for (int i = 0; i < cfg->peer_count; i++) {
-        /* A self-assignment is recorded in the dedup log at send time
-         * and would never play — reject the misconfig loudly instead. */
-        if (cfg->peers[i] == cfg->id) {
-            LOG_ERR("Config 'peers' must not contain this device's id (0x%02x)",
-                    cfg->id);
-            return -EINVAL;
-        }
     }
     if (cfg->delay_min_ms > cfg->delay_max_ms) {
         LOG_ERR("delay_min (%u) must not exceed delay_max (%u)",
@@ -117,7 +111,6 @@ int device_config_load(struct device_config *cfg)
     }
 
     LOG_INF("Device ID: 0x%02x", cfg->id);
-    LOG_HEXDUMP_INF(cfg->peers, cfg->peer_count, "Peers:");
     LOG_INF("Delay range: %u–%u ms", cfg->delay_min_ms, cfg->delay_max_ms);
     LOG_INF("Accel threshold: %u mg", cfg->accel_threshold_mg);
 

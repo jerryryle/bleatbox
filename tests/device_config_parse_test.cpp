@@ -117,36 +117,11 @@ TEST_F(ParseLineTest, IdInvalidHex)
     EXPECT_NE(parse("id ZZ"), 0);
 }
 
-TEST_F(ParseLineTest, PeersSingle)
+TEST_F(ParseLineTest, UnknownKeyIgnored)
 {
-    EXPECT_EQ(parse("peers 01"), 0);
-    EXPECT_EQ(cfg.peer_count, 1);
-    EXPECT_EQ(cfg.peers[0], 0x01);
-}
-
-TEST_F(ParseLineTest, PeersMultiple)
-{
-    EXPECT_EQ(parse("peers 01 02 FF"), 0);
-    EXPECT_EQ(cfg.peer_count, 3);
-    EXPECT_EQ(cfg.peers[0], 0x01);
-    EXPECT_EQ(cfg.peers[1], 0x02);
-    EXPECT_EQ(cfg.peers[2], 0xFF);
-}
-
-TEST_F(ParseLineTest, PeersEmpty)
-{
-    EXPECT_NE(parse("peers"), 0);
-}
-
-TEST_F(ParseLineTest, PeersOverflow)
-{
-    char line[256] = "peers";
-    for (int i = 0; i < DEVICE_CONFIG_MAX_PEERS + 1; i++) {
-        char hex[4];
-        snprintf(hex, sizeof(hex), " %02X", i & 0xFF);
-        strncat(line, hex, sizeof(line) - strlen(line) - 1);
-    }
-    EXPECT_NE(parse(line), 0);
+    /* Retired keys (the old 'peers' and 'slot') parse as harmless no-ops. */
+    EXPECT_EQ(parse("peers 01 02 03"), 0);
+    EXPECT_EQ(parse("slot 3"), 0);
 }
 
 TEST_F(ParseLineTest, VolumeValid)

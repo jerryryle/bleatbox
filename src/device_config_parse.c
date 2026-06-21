@@ -59,22 +59,6 @@ int device_config_parse_line(char *line, struct device_config *cfg,
             return -EINVAL;
         }
         *has_id = true;
-    } else if (strcmp(key, "peers") == 0) {
-        cfg->peer_count = 0;
-        char *val;
-
-        while ((val = strtok_r(NULL, " \t\r\n", &saveptr)) != NULL) {
-            if (cfg->peer_count >= DEVICE_CONFIG_MAX_PEERS) {
-                return -ENOSPC;
-            }
-            if (device_config_parse_hex_byte(val, &cfg->peers[cfg->peer_count])) {
-                return -EINVAL;
-            }
-            cfg->peer_count++;
-        }
-        if (cfg->peer_count == 0) {
-            return -EINVAL;
-        }
     } else if (strcmp(key, "volume") == 0) {
         char *val = strtok_r(NULL, " \t\r\n", &saveptr);
         unsigned long v;
