@@ -12,12 +12,13 @@ target_sources(app PRIVATE
     src/ble.c
     src/broadcast_log.c
     src/broadcast_log_core.c
-    src/assignments.c
+    src/compose.c
     src/sounds.c
     src/wrap_to_range.c
     src/device_config.c
     src/device_config_parse.c
     src/sounds_match.c
+    src/message.c
 )
 
 target_sources_ifdef(CONFIG_SHELL app PRIVATE

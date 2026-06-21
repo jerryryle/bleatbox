@@ -18,7 +18,7 @@
 #include <zephyr/drivers/gpio.h>
 #include <zephyr/logging/log.h>
 
-#include "assignments.h"
+#include "compose.h"
 #include "device_config.h"
 #include "events.h"
 #include "accel.h"
@@ -103,21 +103,21 @@ static void handle_vibration(void)
     }
 
     if (audio_play_sound(path, 0)) {
-        /* Lost a race with another codec claim — don't broadcast
-         * assignments for a sound we didn't play. */
+        /* Lost a race with another codec claim — don't broadcast a
+         * message for a sound we didn't play. */
         return;
     }
 
-    const struct assignment *assignments;
-    int n = assignments_generate(&assignments);
-    if (n < 0) {
-        LOG_ERR("Assignment generation failed: %d", n);
-    } else if (n > 0) {
-        LOG_INF("Broadcasting %d assignments", n);
-        ble_advertise_assignments(assignments, n);
-    } else {
-        LOG_WRN("No assignments generated — check config and sound count");
+    uint8_t payload[16];
+    int err = compose_message(payload);
+    if (err) {
+        LOG_WRN("Message compose failed (%d) — check config and sound count",
+                err);
+        return;
     }
+
+    LOG_INF("Broadcasting bleat message");
+    ble_broadcast_message(payload);
 }
 
 static void handle_ble_rx(const struct event *evt)
@@ -195,11 +195,10 @@ int main(void)
     /* --- Volume from config --- */
     audio_set_volume(cfg.volume);
 
-    /* --- Assignment config --- */
-    assignments_init(cfg.peers, cfg.peer_count,
-                     cfg.delay_min_ms, cfg.delay_max_ms,
-                     VIBRATION_SOUND_INDEX + 1,
-                     sounds_get_count(SOUND_TYPE_GOAT));
+    /* --- Message composition config --- */
+    compose_init(cfg.delay_min_ms, cfg.delay_max_ms,
+                 VIBRATION_SOUND_INDEX + 1,
+                 sounds_get_count(SOUND_TYPE_GOAT));
 
     /* --- Start producers (any-motion interrupt, BLE scan) --- */
     if (accel_start(cfg.accel_threshold_mg)) {

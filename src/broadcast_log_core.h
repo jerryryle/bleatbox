@@ -5,9 +5,11 @@
 #include <stdint.h>
 
 /*
- * Sized above the maximum fleet size (DEVICE_CONFIG_MAX_PEERS) so a
- * burst of broadcasts from every device can't evict entries whose
- * packets are still being relayed around the mesh.
+ * Sized well above the fleet size so a burst of broadcasts from every
+ * device can't evict entries whose packets are still being relayed around
+ * the mesh.  Also gives the reserved macOS-message originator a seq space
+ * (8 bits) far larger than this ring, so a fresh message is never dropped
+ * as a stale duplicate.
  */
 #define BROADCAST_LOG_SIZE 32
 
