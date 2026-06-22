@@ -34,7 +34,7 @@
 #include <zephyr/dt-bindings/adc/nrf-saadc.h>
 
 /* OTA flash split: updater @0x26000, this app @0x3e000. */
-#include "bleatbox-partitions.dtsi"
+#include "../../common/bleatbox-partitions.dtsi"
 
 / {
 	chosen {

@@ -11,7 +11,7 @@ target_sources(app PRIVATE
     src/audio.c
     src/ble.c
     src/ota.c
-    src/fw_image.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../common/fw_image.c
     src/broadcast_log.c
     src/broadcast_log_core.c
     src/compose.c
@@ -26,3 +26,6 @@ target_sources(app PRIVATE
 target_sources_ifdef(CONFIG_SHELL app PRIVATE
     src/shell.c
 )
+
+# fw_image.{c,h} is shared with the updater and host tests.
+target_include_directories(app PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../common)

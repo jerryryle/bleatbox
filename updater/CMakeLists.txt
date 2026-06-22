@@ -5,6 +5,6 @@ project(bleatbox_updater)
 # fw_image.c is shared with the main app and host tests.
 target_sources(app PRIVATE
     src/main.c
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/fw_image.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../common/fw_image.c
 )
-target_include_directories(app PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../src)
+target_include_directories(app PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../common)
