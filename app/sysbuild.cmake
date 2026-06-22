@@ -6,5 +6,5 @@
 
 ExternalZephyrProject_Add(
     APPLICATION updater
-    SOURCE_DIR ${APP_DIR}/updater
+    SOURCE_DIR ${APP_DIR}/../updater
 )

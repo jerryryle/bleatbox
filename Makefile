@@ -5,14 +5,14 @@ ACTIVATE := . $(VENV)/bin/activate
 
 BOARD ?= adafruit_feather_nrf52840/nrf52840/uf2
 
-# Sysbuild builds two images: the main app (build/bleatbox) and the
+# Sysbuild builds two images: the main app (build/app) and the
 # second-stage updater (build/updater). Provisioning needs BOTH — the UF2
 # bootloader launches the updater at 0x26000, which chain-loads the app at
 # 0x3e000. Flashing only the app would brick the box.
 PROVISION_UF2 := build/bleatbox-provision.uf2
 UPDATER_UF2 := build/updater/zephyr/zephyr.uf2
-APP_UF2 := build/bleatbox/zephyr/zephyr.uf2
-APP_BIN := build/bleatbox/zephyr/zephyr.bin
+APP_UF2 := build/app/zephyr/zephyr.uf2
+APP_BIN := build/app/zephyr/zephyr.bin
 OTA_IMAGE := build/bleatbox-update.bin
 OTA_SD_PATH := /SD:/bleatbox-update.bin
 
@@ -23,7 +23,7 @@ UF2_VOLUME ?= /Volumes/FTHR840BOOT
 .PHONY: build clean test flash provision-uf2 ota-image ota 1 2 3 4 5 6
 
 build: test
-	$(ACTIVATE) && west build --sysbuild -b $(BOARD)
+	$(ACTIVATE) && west build --sysbuild -b $(BOARD) app
 	$(MAKE) provision-uf2 ota-image
 
 # Single drag-drop artifact containing updater + app (initial provisioning).

@@ -1,5 +1,20 @@
 {
     "cmake.configureOnOpen": false,
     "cmake.configureOnEdit": false,
-    "cmake.automaticReconfigure": false
+    "cmake.automaticReconfigure": false,
+
+    // Keep the C/C++ extension from indexing the vendored west tree and build
+    // output. This only limits the symbol/browse indexer; #include resolution
+    // still uses the -I paths from compile_commands.json, so Zephyr headers
+    // still open. Excluding these lets header<->source associations (which is
+    // how a header borrows a .c file's include paths) settle quickly.
+    "C_Cpp.files.exclude": {
+        "**/.git": true,
+        "${workspaceFolder}/zephyr": true,
+        "${workspaceFolder}/modules": true,
+        "${workspaceFolder}/tools": true,
+        "${workspaceFolder}/bootloader": true,
+        "${workspaceFolder}/build": true,
+        "${workspaceFolder}/build-tests": true
+    }
 }

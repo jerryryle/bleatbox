@@ -188,8 +188,9 @@ marketplace. This single pack installs:
 1. Open the nRF Connect sidebar panel (Nordic logo in the activity bar).
 2. Click **Add Build Configuration**.
 3. Select board: `adafruit_feather_nrf52840`.
-4. Select the project directory (this repo root).
-5. Click **Build Configuration** — this runs `west build` internally.
+4. Select the application directory: `app/` (not the repo root). Enable
+   **sysbuild** so the updater image is built alongside the app.
+5. Click **Build Configuration** — this runs `west build --sysbuild` internally.
 
 ### Serial console from VS Code
 
@@ -341,7 +342,7 @@ always recovers a box.
 - `bleatbox-provision.uf2` — updater + app merged, for **initial** flashing via
   UF2 drag-drop (or `make flash`). Flashing only the app would brick the box,
   since `0x26000` would hold no updater.
-- `bleatbox-update.bin` — app image plus a 12-byte header (`src/fw_image.h`), the
+- `bleatbox-update.bin` — app image plus a 12-byte header (`common/fw_image.h`), the
   artifact pushed over the air. There is no version field: any valid image is
   applied, so firmware can be freely upgraded **or downgraded**.
 
@@ -392,7 +393,7 @@ or clear the cache with `sudo pkill bluetoothd`.
 
 The OTA-arm command rides inside the standard 16-byte message payload, so a Mac
 sends it exactly like a bleat — it just claims one of the reserved values of the
-global 2-bit command field (see `src/ble_ota.h`):
+global 2-bit command field (see `app/src/ble_ota.h`):
 
 ```
 command field (bits 114..115) = 0b01   OTA arm
