@@ -8,7 +8,7 @@
  */
 
 /* OTA flash split: updater @0x26000 (code_partition), main_app @0x3e000. */
-#include "../../boards/bleatbox-partitions.dtsi"
+#include "../../common/bleatbox-partitions.dtsi"
 
 / {
 	aliases {

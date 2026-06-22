@@ -15,7 +15,15 @@ make clean      # Remove build/ and build-tests/
 make flash      # west flash (requires user to double-press reset button to put board into UF2 mode first)
 ```
 
-`make` runs tests first, then `west build` inside the project's `.venv`. The board target defaults to `adafruit_feather_nrf52840/nrf52840/uf2` and can be overridden with `BOARD=`.
+`make` runs tests first, then `west build --sysbuild app` inside the project's `.venv`. The board target defaults to `adafruit_feather_nrf52840/nrf52840/uf2` and can be overridden with `BOARD=`.
+
+## Repository layout
+
+The repo is a Zephyr west workspace (the vendored `zephyr/`, `modules/`, `tools/`, and `bootloader/` sit at the top level). Sysbuild builds two peer application images, each self-contained in its own directory, plus a shared directory:
+
+- **`app/`** — the main firmware (`CMakeLists.txt`, `prj.conf`, `sysbuild.cmake`, `boards/`, `src/`). Built into `build/app/`.
+- **`updater/`** — the second-stage updater that the UF2 bootloader chain-loads. Built into `build/updater/`.
+- **`common/`** — code and devicetree shared by both images and the host tests: `fw_image.{c,h}` (the OTA image header) and `bleatbox-partitions.dtsi` (the OTA flash split). Neither image reaches into the other's tree; both reference `common/`.
 
 ## Architecture
 
@@ -44,11 +52,11 @@ Every init step except the event queue itself is **non-fatal**: a failed subsyst
 
 ### Devicetree
 
-The overlay is `boards/adafruit_feather_nrf52840_nrf52840_uf2.overlay`. Application-specific GPIOs live under the `zephyr,user` node. Sensor/peripheral nodes go under their bus (`&i2c0`, `&spi1`).
+The overlay is `app/boards/adafruit_feather_nrf52840_nrf52840_uf2.overlay`. Application-specific GPIOs live under the `zephyr,user` node. Sensor/peripheral nodes go under their bus (`&i2c0`, `&spi1`). The OTA flash split shared with the updater lives in `common/bleatbox-partitions.dtsi`.
 
 ## Testing
 
-Tests use GoogleTest (C++), wrapping C code under test with `extern "C"`. Test files go in `tests/` as `*_test.cpp`. The CMakeLists auto-discovers test files and links the corresponding `src/*.c` module.
+Tests use GoogleTest (C++), wrapping C code under test with `extern "C"`. Test files go in `tests/` as `*_test.cpp`. The CMakeLists auto-discovers test files and links the corresponding module from `app/src/` (or `common/` for shared modules like `fw_image`).
 
 
 ## Design Principles

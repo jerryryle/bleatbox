@@ -3,7 +3,8 @@ project(bleatbox_tests C CXX)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(CMAKE_CXX_STANDARD 14)
-set(SRC_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../src)
+set(SRC_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../app/src)
+set(COMMON_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../common)
 
 include(FetchContent)
 FetchContent_Declare(
@@ -22,10 +23,12 @@ foreach(TEST_FILE ${TEST_SOURCES})
     string(REPLACE "_test" "" MODULE ${NAME})
     if(EXISTS ${SRC_DIR}/${MODULE}.c)
         list(APPEND MODULE_SOURCES ${SRC_DIR}/${MODULE}.c)
+    elseif(EXISTS ${COMMON_DIR}/${MODULE}.c)
+        list(APPEND MODULE_SOURCES ${COMMON_DIR}/${MODULE}.c)
     endif()
 endforeach()
 
 add_executable(tests ${TEST_SOURCES} ${MODULE_SOURCES})
-target_include_directories(tests PRIVATE ${SRC_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/fakes)
+target_include_directories(tests PRIVATE ${SRC_DIR} ${COMMON_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/fakes)
 target_link_libraries(tests GTest::gtest_main)
 add_test(NAME tests COMMAND tests)

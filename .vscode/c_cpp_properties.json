@@ -3,7 +3,8 @@
         {
             "name": "Zephyr",
             "compileCommands": [
-                "${workspaceFolder}/build/compile_commands.json",
+                "${workspaceFolder}/build/app/compile_commands.json",
+                "${workspaceFolder}/build/updater/compile_commands.json",
                 "${workspaceFolder}/build-tests/compile_commands.json"
             ],
             "cStandard": "c11",
