@@ -6,7 +6,10 @@
  */
 
 #include <zephyr/shell/shell.h>
+#include <zephyr/sys/reboot.h>
 #include <zephyr/logging/log.h>
+
+#include <hal/nrf_power.h>
 
 #include <stdlib.h>
 #include <string.h>
@@ -256,6 +259,29 @@ static int cmd_ota(const struct shell *sh, size_t argc, char **argv)
     return -EINVAL;
 }
 
+/* Adafruit nRF52 bootloader magic: GPREGRET == 0x57 (DFU_MAGIC_UF2_RESET)
+ * makes the bootloader stay in UF2 mass-storage mode after a reset, so a
+ * sealed-up box can be reflashed over USB without the double-tap-reset dance.
+ * The register survives the soft reset; the bootloader reads and clears it. */
+#define UF2_BOOTLOADER_MAGIC 0x57
+
+static int cmd_bootloader(const struct shell *sh, size_t argc, char **argv)
+{
+    ARG_UNUSED(argc);
+    ARG_UNUSED(argv);
+
+    shell_print(sh, "Rebooting into UF2 bootloader...");
+
+    nrf_power_gpregret_set(NRF_POWER, 0, UF2_BOOTLOADER_MAGIC);
+
+    /* Let the shell flush the line over USB CDC ACM before we reset. */
+    k_msleep(100);
+
+    sys_reboot(SYS_REBOOT_COLD);
+
+    return 0; /* unreachable */
+}
+
 SHELL_CMD_ARG_REGISTER(play, NULL,
                        "Play a sound: play goat|misc <index>",
                        cmd_play, 3, 0);
@@ -284,3 +310,7 @@ SHELL_CMD_ARG_REGISTER(battery, NULL,
 SHELL_CMD_ARG_REGISTER(ota, NULL,
                        "Over-the-air update window: ota status|arm|cancel",
                        cmd_ota, 2, 0);
+
+SHELL_CMD_ARG_REGISTER(bootloader, NULL,
+                       "Reboot into the UF2 bootloader for USB firmware update",
+                       cmd_bootloader, 1, 0);
