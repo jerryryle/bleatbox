@@ -85,8 +85,8 @@ TEST_F(ComposeTest, TooFewSoundsFails)
 
 TEST_F(ComposeTest, SilentSlotsArePossibleViaSentinelSound)
 {
-    /* With num_sounds = 0x80, the assignable range [1, 0x7F] includes the
-     * silent sentinel 0x7F; a slot that lands there must read as silent. */
+    /* When the assignable range includes the silent sentinel (0x3F), a slot
+     * that lands there must read as silent. */
     compose_init(0, 0, MESSAGE_SOUND_SILENT, MESSAGE_SOUND_SILENT + 1);
     for (int i = 0; i < MESSAGE_SLOTS * 2; i++) {
         fake_rand_values[i] = MESSAGE_SOUND_SILENT;

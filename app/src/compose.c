@@ -47,7 +47,8 @@ int compose_message(uint8_t payload[16])
         uint16_t delay = (uint16_t)wrap_to_range(sys_rand32_get(),
                                                  g_delay_min_ms,
                                                  g_delay_max_ms);
-        message_pack_slot(payload, slot, sound, delay);
+        /* Boxes only ever compose goat sounds; misc comes from a Mac. */
+        message_pack_slot(payload, slot, sound, MESSAGE_TYPE_GOAT, delay);
     }
 
     message_set_command(payload, MESSAGE_CMD_PLAY);

@@ -13,7 +13,8 @@
  *
  *   slot i -> bits [i*19 .. i*19+18]   (i = 0..5)
  *     within a slot:  [0..11]  delay_ms  (12 bits, 0..4095)
- *                     [12..18] sound      (7 bits; 0x7F = play nothing)
+ *                     [12..17] sound      (6 bits; 0x3F = play nothing)
+ *                     [18]     type       (1 bit; 0 = goat, 1 = misc)
  *   bits [114..115] command   (2 bits, global; 00 = play)
  *   bits [116..123] seq        (8 bits, relay sequence; macOS path only)
  *   bits [124..127] reserved
@@ -31,8 +32,12 @@
 #define MESSAGE_SLOTS        6
 #define MESSAGE_SLOT_BITS    19
 
-/* sound == all ones means "this slot plays nothing". */
-#define MESSAGE_SOUND_SILENT 0x7F
+/* sound == all ones (6-bit) means "this slot plays nothing". */
+#define MESSAGE_SOUND_SILENT 0x3F
+/* Slot sound type (bit 18).  Values match enum sound_type: 0 = goat, 1 = misc.
+ * Boxes only ever compose goat; a Mac can send either. */
+#define MESSAGE_TYPE_GOAT 0
+#define MESSAGE_TYPE_MISC 1
 /* Largest delay the 12-bit slot field can hold, in milliseconds. */
 #define MESSAGE_DELAY_MAX    0xFFF
 /* command 00 = play; 01/10/11 reserved for future use. */
@@ -53,8 +58,9 @@
 #define MESSAGE_SEQ_OFFSET   (MESSAGE_CMD_OFFSET + 2)            /* 116 */
 
 struct message_slot {
-    uint8_t  sound;    /* 7-bit sound index */
+    uint8_t  sound;    /* 6-bit sound index */
     uint16_t delay_ms; /* 12-bit, 0..4095 */
+    uint8_t  type;     /* 0 = goat, 1 = misc (see MESSAGE_TYPE_*) */
     bool     play;     /* false for the silent sentinel */
 };
 
@@ -76,14 +82,14 @@ uint8_t message_get_command(const uint8_t payload[16]);
 uint8_t message_get_seq(const uint8_t payload[16]);
 
 /**
- * Write @p sound (7-bit) and @p delay (12-bit) into @p slot.
+ * Write @p sound (6-bit), @p type (1-bit) and @p delay (12-bit) into @p slot.
  *
  * A @p delay above MESSAGE_DELAY_MAX is clamped to it.  A @p sound that does
- * not fit the 7-bit field is forced to MESSAGE_SOUND_SILENT (no sound) rather
- * than wrapped to a different valid index.
+ * not fit the 6-bit field is forced to MESSAGE_SOUND_SILENT (no sound) rather
+ * than wrapped to a different valid index.  Only the low bit of @p type is used.
  */
 void message_pack_slot(uint8_t payload[16], uint8_t slot,
-                       uint8_t sound, uint16_t delay);
+                       uint8_t sound, uint8_t type, uint16_t delay);
 
 /** Set the global 2-bit command. */
 void message_set_command(uint8_t payload[16], uint8_t command);
