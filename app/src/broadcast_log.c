@@ -17,7 +17,7 @@ void broadcast_log_init(void)
     k_spin_unlock(&g_lock, key);
 }
 
-bool broadcast_log_check_and_record(uint8_t originator, uint8_t seq)
+bool broadcast_log_check_and_record(uint8_t originator, uint16_t seq)
 {
     k_spinlock_key_t key = k_spin_lock(&g_lock);
     bool duplicate = broadcast_log_core_check_and_record(&g_log,
@@ -26,7 +26,7 @@ bool broadcast_log_check_and_record(uint8_t originator, uint8_t seq)
     return duplicate;
 }
 
-void broadcast_log_record(uint8_t originator, uint8_t seq)
+void broadcast_log_record(uint8_t originator, uint16_t seq)
 {
     k_spinlock_key_t key = k_spin_lock(&g_lock);
     broadcast_log_core_record(&g_log, originator, seq);

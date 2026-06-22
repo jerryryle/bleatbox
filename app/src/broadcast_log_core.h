@@ -14,8 +14,8 @@
 #define BROADCAST_LOG_SIZE 32
 
 struct broadcast_log_entry {
-    uint8_t originator;
-    uint8_t seq;
+    uint8_t  originator;
+    uint16_t seq;
 };
 
 struct broadcast_log {
@@ -36,12 +36,12 @@ void broadcast_log_core_init(struct broadcast_log *log);
  * @return true if the pair was already in the log (duplicate).
  */
 bool broadcast_log_core_check_and_record(struct broadcast_log *log,
-                                         uint8_t originator, uint8_t seq);
+                                         uint8_t originator, uint16_t seq);
 
 /**
  * Unconditionally record (originator, seq) in the log.
  */
 void broadcast_log_core_record(struct broadcast_log *log,
-                               uint8_t originator, uint8_t seq);
+                               uint8_t originator, uint16_t seq);
 
 #endif /* BROADCAST_LOG_CORE_H_ */

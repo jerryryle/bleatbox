@@ -1,7 +1,7 @@
 /*
  * BLE subsystem — extended advertising and scanning with relay support.
  *
- * One on-air format: a 6-byte relay header plus a 16-byte message payload
+ * One on-air format: a 5-byte relay header plus a 16-byte message payload
  * (six positional slots).  Transmit broadcasts it via extended advertising
  * (5 events over ~150 ms).  macOS, which can only advertise Service UUIDs,
  * sends the same payload as a 128-bit UUID; the first device to hear it
@@ -17,7 +17,6 @@
 #include <zephyr/bluetooth/gap.h>
 #include <zephyr/bluetooth/hci.h>
 #include <zephyr/sys/byteorder.h>
-#include <zephyr/random/random.h>
 #include <zephyr/logging/log.h>
 
 #include <string.h>
@@ -41,7 +40,7 @@ LOG_MODULE_REGISTER(ble, LOG_LEVEL_INF);
 #define COMPANY_ID_HI 0xFF
 #define MAGIC_BYTE 0x42
 
-#define HEADER_SIZE 6 /* company_id(2) + magic(1) + originator(1) + seq(1) + ttl(1) */
+#define HEADER_SIZE 5 /* company_id(2) + magic(1) + originator(1) + ttl(1) */
 #define MESSAGE_PAYLOAD_LEN 16
 #define MESSAGE_MFG_SIZE (HEADER_SIZE + MESSAGE_PAYLOAD_LEN)
 
@@ -51,12 +50,13 @@ BUILD_ASSERT(BLE_AD_OVERHEAD + MESSAGE_MFG_SIZE <= CONFIG_BT_CTLR_ADV_DATA_LEN_M
              "message packet exceeds controller advertising data capacity");
 
 /* Offsets within the header */
+/* The relay sequence number lives in the payload (MESSAGE_SEQ_OFFSET), not the
+ * header, so the mesh and macOS paths carry it identically. */
 #define HDR_OFF_COMPANY_LO 0
 #define HDR_OFF_COMPANY_HI 1
 #define HDR_OFF_MAGIC      2
 #define HDR_OFF_ORIGINATOR 3
-#define HDR_OFF_SEQ        4
-#define HDR_OFF_TTL        5
+#define HDR_OFF_TTL        4
 
 /* ------------------------------------------------------------------ */
 /* macOS Service-UUID ingress                                         */
@@ -83,11 +83,18 @@ static struct k_msgq *g_evt_q;
 static uint8_t g_relay_ttl;
 static volatile bool g_adv_active;
 
+/* Per-trigger relay sequence counter for this device's own broadcasts.
+ * Increments (wrapping at MESSAGE_SEQ_MASK) so back-to-back triggers never
+ * collide in neighbors' dedup rings.  Dedup still only checks for existence,
+ * making no assumption that the counter increases — so a reset that restarts
+ * it at 0 is harmless beyond a brief chance of a stale-entry collision. */
+static uint16_t g_seq;
+
 /* This device's slot, derived from its id (MESSAGE_NO_SLOT = does not play,
  * but still relays), plus the last macOS-message seq we gatewayed and when,
  * to suppress re-flooding the same continuously-advertised seq. */
 static uint8_t g_local_slot;
-static uint8_t g_last_uuid_seq;
+static uint16_t g_last_uuid_seq;
 static int64_t g_last_uuid_time;
 
 /* Set true once ble_init() has enabled the stack and created the adv
@@ -270,13 +277,8 @@ int ble_broadcast_message(const uint8_t payload[16])
         g_adv_active = false;
     }
 
-    /* Random per-trigger nonce, not a monotonic sequence: these devices are
-     * battery powered and reset unpredictably.  A counter would restart at 0
-     * on reboot and collide with (originator, seq) pairs neighbors still hold
-     * in their dedup rings, so a freshly-booted device would be ignored until
-     * its counter "caught up".  A random nonce carries no device state to fall
-     * behind. */
-    uint8_t seq = sys_rand8_get();
+    uint16_t seq = g_seq;
+    g_seq = (uint16_t)((g_seq + 1) & MESSAGE_SEQ_MASK);
 
     /* Record in dedup table so we don't process our own broadcast */
     broadcast_log_record(g_local_device_id, seq);
@@ -285,9 +287,10 @@ int ble_broadcast_message(const uint8_t payload[16])
     g_mfg_data[HDR_OFF_COMPANY_HI] = COMPANY_ID_HI;
     g_mfg_data[HDR_OFF_MAGIC] = MAGIC_BYTE;
     g_mfg_data[HDR_OFF_ORIGINATOR] = g_local_device_id;
-    g_mfg_data[HDR_OFF_SEQ] = seq;
     g_mfg_data[HDR_OFF_TTL] = g_relay_ttl;
     memcpy(&g_mfg_data[HEADER_SIZE], payload, MESSAGE_PAYLOAD_LEN);
+    /* The seq rides in the payload now, so stamp it after copying. */
+    message_set_seq(&g_mfg_data[HEADER_SIZE], seq);
 
     int ret = start_advertising(MESSAGE_MFG_SIZE);
     k_mutex_unlock(&g_tx_mutex);
@@ -320,7 +323,7 @@ static void relay_work_handler(struct k_work *work)
     k_spinlock_key_t key = k_spin_lock(&g_relay_lock);
     uint8_t len = g_relay_len;
     uint8_t originator = g_relay_buf[HDR_OFF_ORIGINATOR];
-    uint8_t seq = g_relay_buf[HDR_OFF_SEQ];
+    uint16_t seq = message_get_seq(&g_relay_buf[HEADER_SIZE]);
     uint8_t ttl = g_relay_new_ttl;
     memcpy(g_mfg_data, g_relay_buf, len);
     g_mfg_data[HDR_OFF_TTL] = ttl;
@@ -406,6 +409,28 @@ static bool act_on_message(const uint8_t *payload)
     return false;
 }
 
+/*
+ * Shared core of both ingress paths: dedup on (originator, payload seq), and
+ * if the message is new, act on it locally.  @p out_is_ota reports whether it
+ * was an OTA-arm command (which must not be propagated).
+ *
+ * @return true if the message is new (caller should propagate it), false if it
+ *         was a duplicate (already handled).
+ */
+static bool dedup_and_act(uint8_t originator, const uint8_t *payload,
+                          bool *out_is_ota)
+{
+    uint16_t seq = message_get_seq(payload);
+
+    if (broadcast_log_check_and_record(originator, seq)) {
+        LOG_DBG("Duplicate dropped: originator=0x%02x seq=%u", originator, seq);
+        return false;
+    }
+
+    *out_is_ota = act_on_message(payload);
+    return true;
+}
+
 static void handle_mfg_data(const uint8_t *data, uint8_t data_len)
 {
     if (data_len != MESSAGE_MFG_SIZE) {
@@ -418,20 +443,14 @@ static void handle_mfg_data(const uint8_t *data, uint8_t data_len)
         return;
     }
 
-    uint8_t originator = data[HDR_OFF_ORIGINATOR];
-    uint8_t seq = data[HDR_OFF_SEQ];
-
     /* The TTL arrives from the air — clamp it to our own configured
      * limit so a spoofed packet can't make the mesh relay 255 hops. */
     uint8_t ttl = MIN(data[HDR_OFF_TTL], g_relay_ttl);
 
-    if (broadcast_log_check_and_record(originator, seq)) {
-        LOG_DBG("Duplicate dropped: originator=0x%02x seq=%u",
-                originator, seq);
+    bool is_ota;
+    if (!dedup_and_act(data[HDR_OFF_ORIGINATOR], &data[HEADER_SIZE], &is_ota)) {
         return;
     }
-
-    bool is_ota = act_on_message(&data[HEADER_SIZE]);
 
     if (ttl > 0 && !is_ota) {
         schedule_relay(data, data_len, ttl - 1);
@@ -458,7 +477,7 @@ static bool uuid16_list_has(const uint8_t *data, uint8_t len, uint16_t uuid)
  */
 static void handle_message_uuid(const uint8_t *payload)
 {
-    uint8_t seq = message_get_seq(payload);
+    uint16_t seq = message_get_seq(payload);
 
     /* The Mac advertises one stable seq per burst.  Suppress re-gatewaying
      * it even if the shared dedup ring evicts (0xFE, seq) mid-burst in a
@@ -469,9 +488,11 @@ static void handle_message_uuid(const uint8_t *payload)
         return;
     }
 
-    /* Same (originator, seq) dedup as the relayed packet: if a neighbor's
-     * relay of this message already reached us, don't gateway it again. */
-    if (broadcast_log_check_and_record(MESSAGE_EXT_ORIGINATOR, seq)) {
+    /* Same dedup + local handling as the mesh path, keyed on the reserved
+     * macOS originator.  If a neighbor's relay of this message already reached
+     * us, don't gateway it again. */
+    bool is_ota;
+    if (!dedup_and_act(MESSAGE_EXT_ORIGINATOR, payload, &is_ota)) {
         return;
     }
 
@@ -480,16 +501,17 @@ static void handle_message_uuid(const uint8_t *payload)
 
     /* OTA commands are acted on locally but never gatewayed into the mesh —
      * the relay burst would disrupt this box's own OTA connectable window. */
-    if (act_on_message(payload)) {
+    if (is_ota) {
         return;
     }
 
+    /* Re-emit as a manufacturer-data packet so the relay path floods it.  The
+     * seq already rides in the payload, so the header carries no seq byte. */
     uint8_t pkt[MESSAGE_MFG_SIZE];
     pkt[HDR_OFF_COMPANY_LO] = COMPANY_ID_LO;
     pkt[HDR_OFF_COMPANY_HI] = COMPANY_ID_HI;
     pkt[HDR_OFF_MAGIC] = MAGIC_BYTE;
     pkt[HDR_OFF_ORIGINATOR] = MESSAGE_EXT_ORIGINATOR;
-    pkt[HDR_OFF_SEQ] = seq;
     pkt[HDR_OFF_TTL] = g_relay_ttl; /* relay handler stamps the real ttl */
     memcpy(&pkt[HEADER_SIZE], payload, MESSAGE_PAYLOAD_LEN);
 
@@ -561,6 +583,7 @@ int ble_init(struct k_msgq *event_q)
 {
     g_evt_q = event_q;
     g_adv_active = false;
+    g_seq = 0;
     g_relay_len = 0;
     g_relay_new_ttl = 0;
     g_ble_ready = false;
