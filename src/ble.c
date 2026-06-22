@@ -17,6 +17,7 @@
 #include <zephyr/bluetooth/gap.h>
 #include <zephyr/bluetooth/hci.h>
 #include <zephyr/sys/byteorder.h>
+#include <zephyr/random/random.h>
 #include <zephyr/logging/log.h>
 
 #include <string.h>
@@ -80,7 +81,6 @@ static uint8_t g_local_device_id;
 static struct bt_le_ext_adv *g_adv_set;
 static struct k_msgq *g_evt_q;
 static uint8_t g_relay_ttl;
-static uint8_t g_seq;
 static volatile bool g_adv_active;
 
 /* This device's slot, derived from its id (MESSAGE_NO_SLOT = does not play,
@@ -270,7 +270,13 @@ int ble_broadcast_message(const uint8_t payload[16])
         g_adv_active = false;
     }
 
-    uint8_t seq = g_seq++;
+    /* Random per-trigger nonce, not a monotonic sequence: these devices are
+     * battery powered and reset unpredictably.  A counter would restart at 0
+     * on reboot and collide with (originator, seq) pairs neighbors still hold
+     * in their dedup rings, so a freshly-booted device would be ignored until
+     * its counter "caught up".  A random nonce carries no device state to fall
+     * behind. */
+    uint8_t seq = sys_rand8_get();
 
     /* Record in dedup table so we don't process our own broadcast */
     broadcast_log_record(g_local_device_id, seq);
@@ -553,7 +559,6 @@ static void scan_recv_cb(const struct bt_le_scan_recv_info *info,
 int ble_init(struct k_msgq *event_q)
 {
     g_evt_q = event_q;
-    g_seq = 0;
     g_adv_active = false;
     g_relay_len = 0;
     g_relay_new_ttl = 0;
