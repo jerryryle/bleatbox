@@ -34,6 +34,24 @@ void device_config_defaults(struct device_config *cfg)
     };
 }
 
+/* Log a parse result; return true if it's fatal and the load must abort.
+ * An unrecognized directive only warns so a stale or mistyped line doesn't
+ * take down the whole config. */
+static bool config_line_fatal(int ret, const char *line)
+{
+    if (ret < 0) {
+        LOG_ERR("Config parse error (%d): %s", ret, line);
+        return true;
+    }
+    if (ret == DEVICE_CONFIG_UNKNOWN_KEY) {
+        while (*line == ' ' || *line == '\t') {
+            line++;
+        }
+        LOG_WRN("Ignoring unknown config directive: %s", line);
+    }
+    return false;
+}
+
 int device_config_load(struct device_config *cfg)
 {
     device_config_defaults(cfg);
@@ -57,8 +75,7 @@ int device_config_load(struct device_config *cfg)
         if (buf[pos] == '\n') {
             buf[pos + 1] = '\0';
             ret = device_config_parse_line(buf, cfg, &has_id);
-            if (ret) {
-                LOG_ERR("Config parse error (%d): %s", ret, buf);
+            if (config_line_fatal(ret, buf)) {
                 fs_close(&file);
                 return ret;
             }
@@ -85,8 +102,7 @@ int device_config_load(struct device_config *cfg)
     if (pos > 0) {
         buf[pos] = '\0';
         ret = device_config_parse_line(buf, cfg, &has_id);
-        if (ret) {
-            LOG_ERR("Config parse error (%d): %s", ret, buf);
+        if (config_line_fatal(ret, buf)) {
             fs_close(&file);
             return ret;
         }
