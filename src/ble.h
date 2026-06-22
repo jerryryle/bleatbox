@@ -50,4 +50,14 @@ int ble_start(uint8_t device_id, uint8_t relay_ttl);
  */
 int ble_broadcast_message(const uint8_t payload[16]);
 
+/**
+ * Pause the mesh: stop scanning so the BLE controller is free for other use
+ * (the OTA window's connectable advertising).  Continuous scanning otherwise
+ * starves the connectable advertisement.  Call ble_resume() to restart.
+ */
+void ble_pause(void);
+
+/** Resume the mesh after ble_pause(): restart scanning. */
+void ble_resume(void);
+
 #endif /* BLE_H_ */

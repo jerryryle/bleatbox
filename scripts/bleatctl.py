@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Send a BleatBox message from macOS over BLE.
+Control BleatBox devices from macOS over BLE — send a bleat or an OTA command.
 
 BleatBox uses one message format on the air: a 16-byte payload of six
 positional slots.  Devices exchange it as manufacturer-specific data, but
@@ -26,12 +26,16 @@ tests/message_test.cpp pins the two ends together:
     bits [116..123] seq        (8 bits, relay sequence)
 
 Usage (with uv — installs dependencies automatically):
-    uv run scripts/bleat_send.py --id 1 --sound 1 --delay 1000 \
-                                 --id 6 --sound 3 --delay 1500
+    uv run scripts/bleatctl.py --id 1 --sound 1 --delay 1000 \
+                               --id 6 --sound 3 --delay 1500
 
 Each --id must be paired with a matching --sound and --delay (given in the
 same order).  Without uv, install the CoreBluetooth framework yourself:
     pip install pyobjc-framework-CoreBluetooth
+
+The same payload also arms a box for an over-the-air update (see the README,
+"Over-the-Air Updates"); the upload and reboot then happen over SMP:
+    uv run scripts/bleatctl.py --ota
 """
 
 # /// script
@@ -51,6 +55,11 @@ MESSAGE_SOUND_SILENT = 0x7F
 MESSAGE_CMD_OFFSET = MESSAGE_SLOTS * MESSAGE_SLOT_BITS  # 114
 MESSAGE_SEQ_OFFSET = MESSAGE_CMD_OFFSET + 2             # 116
 MARKER_UUID16 = "FB42"
+
+# OTA arming rides the same payload, marked by command 0b01.  Mirrors
+# src/ble_ota.h.  An armed box becomes connectable for SMP; the operator
+# drives the upload and reboot over that connection (see the README).
+BLE_OTA_CMD = 0x01
 
 # The relay dedup is keyed on (originator, seq); persist seq across runs so two
 # invocations don't collide and get dropped as duplicates.
@@ -83,6 +92,14 @@ def pack_payload(slots: dict[int, tuple[int, int]], command: int, seq: int) -> b
     return bytes(buf)
 
 
+def pack_ota_payload(seq: int) -> bytes:
+    """Build a 16-byte OTA-arm payload (mirrors ble_ota_encode)."""
+    buf = bytearray(16)
+    write_bits(buf, MESSAGE_CMD_OFFSET, 2, BLE_OTA_CMD)
+    write_bits(buf, MESSAGE_SEQ_OFFSET, 8, seq & 0xFF)
+    return bytes(buf)
+
+
 def payload_to_uuid_string(canonical: bytes) -> str:
     """Format the payload as a 128-bit UUID string.
 
@@ -109,18 +126,29 @@ def next_seq() -> int:
     return seq
 
 
-def parse_args() -> tuple[dict[int, tuple[int, int]], int]:
-    p = argparse.ArgumentParser(description="Send a BleatBox message from macOS over BLE.")
-    p.add_argument("--id", type=int, action="append", required=True, dest="ids",
+def parse_args() -> argparse.Namespace:
+    p = argparse.ArgumentParser(
+        description="Control BleatBox devices from macOS over BLE "
+                    "(send a bleat, or an OTA command).")
+    p.add_argument("--id", type=int, action="append", dest="ids",
                    help="device id 1..6 (repeatable)")
-    p.add_argument("--sound", type=int, action="append", required=True,
+    p.add_argument("--sound", type=int, action="append",
                    help="sound index 0..127, or 127 for silent (repeatable)")
-    p.add_argument("--delay", type=int, action="append", required=True,
+    p.add_argument("--delay", type=int, action="append",
                    help="delay in ms 0..4095 (repeatable)")
     p.add_argument("--command", type=int, default=0,
                    help="global command 0..3 (0 = play, others reserved)")
+    p.add_argument("--ota", action="store_true",
+                   help="send an OTA-arm command instead of a bleat")
     args = p.parse_args()
 
+    if args.ota:
+        if args.ids or args.sound or args.delay:
+            p.error("--ota cannot be combined with --id/--sound/--delay")
+        return args
+
+    if not args.ids or not args.sound or not args.delay:
+        p.error("give --id/--sound/--delay (a bleat) or --ota (arm an update)")
     if not (len(args.ids) == len(args.sound) == len(args.delay)):
         p.error("--id, --sound and --delay must be given the same number of times")
     if not 0 <= args.command <= 3:
@@ -138,7 +166,8 @@ def parse_args() -> tuple[dict[int, tuple[int, int]], int]:
         if slot in slots:
             p.error(f"id {dev_id} specified twice")
         slots[slot] = (sound, delay)
-    return slots, args.command
+    args.slots = slots
+    return args
 
 
 def advertise(payload_uuid: str) -> None:
@@ -152,7 +181,7 @@ def advertise(payload_uuid: str) -> None:
         from Foundation import NSRunLoop, NSDate
     except ImportError as e:
         sys.exit(f"PyObjC CoreBluetooth not available ({e}).\n"
-                 "Run with uv (auto-installs deps): uv run scripts/bleat_send.py ...\n"
+                 "Run with uv (auto-installs deps): uv run scripts/bleatctl.py ...\n"
                  "or install manually: pip install pyobjc-framework-CoreBluetooth")
 
     service_uuids = [
@@ -179,15 +208,21 @@ def advertise(payload_uuid: str) -> None:
 
 
 def main() -> None:
-    slots, command = parse_args()
+    args = parse_args()
     seq = next_seq()
-    payload = pack_payload(slots, command, seq)
-    payload_uuid = payload_to_uuid_string(payload)
 
-    active = ", ".join(f"id {s + 1}: sound {snd} @ {d} ms"
-                       for s, (snd, d) in sorted(slots.items()))
-    print(f"Sending [{active}]")
-    print(f"  command={command} seq={seq}")
+    if args.ota:
+        payload = pack_ota_payload(seq)
+        print("Sending OTA arm")
+    else:
+        payload = pack_payload(args.slots, args.command, seq)
+        active = ", ".join(f"id {s + 1}: sound {snd} @ {d} ms"
+                           for s, (snd, d) in sorted(args.slots.items()))
+        print(f"Sending [{active}]")
+        print(f"  command={args.command}")
+
+    payload_uuid = payload_to_uuid_string(payload)
+    print(f"  seq={seq}")
     print(f"  marker UUID  : {MARKER_UUID16}")
     print(f"  payload UUID : {payload_uuid}")
     print(f"  advertising for {BURST_SECONDS}s...")

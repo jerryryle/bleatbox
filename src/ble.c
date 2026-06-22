@@ -22,6 +22,7 @@
 #include <string.h>
 
 #include "ble.h"
+#include "ble_ota.h"
 #include "broadcast_log.h"
 #include "device_config.h"
 #include "events.h"
@@ -92,6 +93,10 @@ static int64_t g_last_uuid_time;
 /* Set true once ble_init() has enabled the stack and created the adv
  * set; gates ble_start() so it never scans on an uninitialized stack. */
 static bool g_ble_ready;
+
+/* True while the mesh is paused (e.g. during an OTA window), so the BLE
+ * controller is free for connectable advertising.  Gates scan restarts. */
+static volatile bool g_paused;
 
 #define MFG_DATA_MAX_SIZE MESSAGE_MFG_SIZE
 static uint8_t g_mfg_data[MFG_DATA_MAX_SIZE];
@@ -174,6 +179,12 @@ static void adv_sent_cb(struct bt_le_ext_adv *adv,
  */
 static void resume_scanning(void)
 {
+    /* While paused (OTA window), the controller is reserved for connectable
+     * advertising — don't let a completing adv burst restart the scan. */
+    if (g_paused) {
+        return;
+    }
+
     int ret = bt_le_scan_start(&g_scan_params, NULL);
     if (ret && ret != -EALREADY) {
         LOG_ERR("Failed to restart scanning: %d", ret);
@@ -354,25 +365,38 @@ static void post_play_event(uint8_t encoded_sound, uint16_t delay_ms)
 }
 
 /*
- * Act on our own slot in a 16-byte message payload.  No-op when the global
- * command is not "play", or our slot is silent or unassigned (a slotless
- * device still relays — it just stays quiet itself).
+ * Act on a 16-byte message payload — same handling for the mesh and macOS
+ * ingress paths.  An OTA-arm command opens the update window; a play command
+ * plays this device's slot (a slotless or silent device stays quiet).
+ *
+ * Returns true if the message was an OTA-arm command.  OTA commands must NOT
+ * be relayed/gatewayed: relaying is an extended-advertising burst, which
+ * disrupts the connectable advertising the OTA window relies on — and it buys
+ * nothing, since the SMP upload is one box at a time within radio range anyway.
  */
-static void act_on_message(const uint8_t *payload)
+static bool act_on_message(const uint8_t *payload)
 {
+    if (ble_ota_is_arm(payload)) {
+        LOG_INF("OTA arm command");
+        struct event evt = {.type = EVENT_OTA_ARM};
+        k_msgq_put(g_evt_q, &evt, K_NO_WAIT);
+        return true;
+    }
+
     if (message_get_command(payload) != MESSAGE_CMD_PLAY) {
-        return;
+        return false;
     }
 
     struct message_slot s;
     message_parse_slot(payload, g_local_slot, &s);
     if (!s.play) {
-        return;
+        return false;
     }
 
     post_play_event(ble_sound_encode(SOUND_TYPE_GOAT, s.sound), s.delay_ms);
     LOG_INF("Message play: slot=%u sound=%u delay=%u ms",
             g_local_slot, s.sound, s.delay_ms);
+    return false;
 }
 
 static void handle_mfg_data(const uint8_t *data, uint8_t data_len)
@@ -400,9 +424,9 @@ static void handle_mfg_data(const uint8_t *data, uint8_t data_len)
         return;
     }
 
-    act_on_message(&data[HEADER_SIZE]);
+    bool is_ota = act_on_message(&data[HEADER_SIZE]);
 
-    if (ttl > 0) {
+    if (ttl > 0 && !is_ota) {
         schedule_relay(data, data_len, ttl - 1);
     }
 }
@@ -447,7 +471,11 @@ static void handle_message_uuid(const uint8_t *payload)
     g_last_uuid_seq = seq;
     g_last_uuid_time = now;
 
-    act_on_message(payload);
+    /* OTA commands are acted on locally but never gatewayed into the mesh —
+     * the relay burst would disrupt this box's own OTA connectable window. */
+    if (act_on_message(payload)) {
+        return;
+    }
 
     uint8_t pkt[MESSAGE_MFG_SIZE];
     pkt[HDR_OFF_COMPANY_LO] = COMPANY_ID_LO;
@@ -538,6 +566,7 @@ int ble_init(struct k_msgq *event_q)
     g_local_slot = MESSAGE_NO_SLOT;
     g_last_uuid_seq = 0;
     g_last_uuid_time = 0;
+    g_paused = false;
 
     broadcast_log_init();
     k_work_init(&g_relay_work, relay_work_handler);
@@ -605,4 +634,30 @@ int ble_start(uint8_t device_id, uint8_t relay_ttl)
     }
 
     return 0;
+}
+
+void ble_pause(void)
+{
+    if (!g_ble_ready) {
+        return;
+    }
+
+    /* Stop scanning and hold any in-flight burst's completion from
+     * restarting it, so the controller is free for connectable advertising
+     * (the OTA window).  Mesh transmits are already quiet during OTA: the
+     * accelerometer trigger is gated and OTA commands aren't relayed. */
+    g_paused = true;
+    bt_le_scan_stop();
+    LOG_INF("BLE mesh paused");
+}
+
+void ble_resume(void)
+{
+    if (!g_ble_ready) {
+        return;
+    }
+
+    g_paused = false;
+    bt_le_scan_start(&g_scan_params, NULL);
+    LOG_INF("BLE mesh resumed");
 }

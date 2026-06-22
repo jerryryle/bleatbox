@@ -10,6 +10,8 @@ target_sources(app PRIVATE
     src/sdcard.c
     src/audio.c
     src/ble.c
+    src/ota.c
+    src/fw_image.c
     src/broadcast_log.c
     src/broadcast_log_core.c
     src/compose.c
