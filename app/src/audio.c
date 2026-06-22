@@ -151,6 +151,15 @@ static int apply_patch_records(struct fs_file_t *f)
 /* A missing patch file is normal; anything else is logged. */
 static void apply_patch_if_present(void)
 {
+    /* Stat first: a missing patch is the common case, and fs_open would log
+     * its own "file open error" for it.  fs_stat treats -ENOENT as a normal,
+     * unlogged result, so the no-patch path stays quiet. */
+    struct fs_dirent entry;
+
+    if (fs_stat(AUDIO_PATCH_PATH, &entry) < 0) {
+        return;
+    }
+
     struct fs_file_t f;
     fs_file_t_init(&f);
 
