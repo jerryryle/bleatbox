@@ -104,17 +104,30 @@ make test
 ### 6. Flash
 
 The Adafruit Feather nRF52840 Express ships with a UF2 bootloader, not a
-J-Link. There are two ways to flash:
+J-Link, so flashing is over USB:
 
-#### Option A: UF2 drag-and-drop (recommended, no extra tools)
-
-1. Double-tap the RESET button on the Feather. The onboard NeoPixel turns
+1. **Double-tap the RESET button** on the Feather. The onboard NeoPixel turns
    green and a `FTHR840BOOT` USB drive appears.
-2. Copy the UF2 file:
+2. Run:
    ```bash
-   cp build/zephyr/zephyr.uf2 /Volumes/FTHR840BOOT/
+   make flash
    ```
-   The board auto-resets and runs the new firmware.
+
+`make flash` builds the firmware and copies the merged provisioning image
+(`build/bleatbox-provision.uf2`) onto the mounted drive; the board then
+auto-resets and runs it. That image bundles **both** the second-stage updater
+and the app — flashing the app alone would brick the box, since the bootloader
+would jump to a missing updater (see
+[Over-the-Air Updates](#over-the-air-updates) for the flash layout).
+
+Once a box has been provisioned over USB this way, you can update it **over the
+air** with no cable at all — see [Over-the-Air Updates](#over-the-air-updates).
+
+If the `uf2` runner can't find the drive, copy the image by hand instead:
+
+```bash
+cp build/bleatbox-provision.uf2 /Volumes/FTHR840BOOT/
+```
 
 **Known macOS issue:** Spotlight indexing can interfere with the UF2 bootloader
 volume. If the `FTHR840BOOT` drive ejects immediately after mounting, disable
@@ -126,16 +139,6 @@ sudo mdutil -i off /Volumes/FTHR840BOOT
 
 If the volume still misbehaves, try using a USB 2.0 hub (some USB 3.0
 controllers on Macs cause timing issues with the nRF52840 USB bootloader).
-
-#### Option B: west flash with a debug probe
-
-If you have a J-Link or CMSIS-DAP probe connected to the SWD header:
-
-```bash
-west flash
-```
-
-This requires `nrfjprog` (Nordic's CLI tools) or `openocd`.
 
 ### 7. Serial console
 
@@ -187,13 +190,6 @@ marketplace. This single pack installs:
 3. Select board: `adafruit_feather_nrf52840`.
 4. Select the project directory (this repo root).
 5. Click **Build Configuration** — this runs `west build` internally.
-
-### Flash from VS Code
-
-1. In the nRF Connect panel, click the **Flash** button on your build
-   configuration.
-2. For UF2 bootloader boards, the extension may prompt you to double-tap
-   reset. Follow the on-screen instructions.
 
 ### Serial console from VS Code
 
@@ -283,8 +279,8 @@ packet, so it **relays across the whole herd** — you only need to be near one
 device:
 
 ```
-uv run scripts/bleat_send.py --id 1 --sound 1 --delay 1000 \
-                             --id 6 --sound 3 --delay 1500
+uv run scripts/bleatctl.py --id 1 --sound 1 --delay 1000 \
+                           --id 6 --sound 3 --delay 1500
 ```
 
 The script declares its dependency inline ([PEP 723](https://peps.python.org/pep-0723/)),
@@ -308,3 +304,104 @@ device provisioning succeeds.
 | `volume [0-100]` | Get the playback volume, or set it (runtime only, does not persist) |
 | `accel [count]` | Sample accelerometer at 100 Hz and print XYZ in milli-g (default 200 samples) |
 | `sinetest on\|off` | Play the VS1053B's built-in sine test tone |
+| `ota status\|arm\|cancel` | Inspect or drive an over-the-air update window (see [Over-the-Air Updates](#over-the-air-updates)) |
+
+## Over-the-Air Updates
+
+Deployed boxes update over BLE — no USB, no MCUboot, and without touching the
+Adafruit UF2 bootloader. Three parts work together:
+
+1. **A second-stage updater** (`updater/`) that the UF2 bootloader launches at
+   `0x26000`. On every boot it checks the SD card for a staged image, flashes it
+   to the main app region, and chain-loads the app at `0x3e000`.
+2. **SMP-over-BLE file transfer** (the SMP File Management group) drops a new
+   image onto a box's SD card over the air.
+3. **A BLE arm trigger** — the same 16-byte message a bleat uses — opens an
+   update window on a box in range, making it connectable for SMP. (It is *not*
+   relayed across the mesh: an armed box stops scanning and relaying so its
+   connectable advertisement is stable, so you update one box at a time within
+   radio range.)
+
+### Flash layout
+
+| Region   | Address  | Size   |
+|----------|----------|--------|
+| updater  | 0x26000  | 96 KB  |
+| main_app | 0x3e000  | 696 KB |
+| storage  | 0xec000  | 32 KB  |
+| UF2 boot | 0xf4000  | 48 KB  |
+
+The UF2 boot partition is never written, so double-press-reset → USB drag-drop
+always recovers a box.
+
+### Build artifacts
+
+`make` produces, under `build/`:
+
+- `bleatbox-provision.uf2` — updater + app merged, for **initial** flashing via
+  UF2 drag-drop (or `make flash`). Flashing only the app would brick the box,
+  since `0x26000` would hold no updater.
+- `bleatbox-update.bin` — app image plus a 12-byte header (`src/fw_image.h`), the
+  artifact pushed over the air. There is no version field: any valid image is
+  applied, so firmware can be freely upgraded **or downgraded**.
+
+### Updating a deployed box
+
+The operator tool is [`smpmgr`](https://github.com/intercreate/smpmgr) (an SMP
+client with BLE support that works on macOS). It needs no install — `uvx` runs
+it on demand.
+
+The quick path, standing within BLE range of the box, is one command:
+
+```
+make ota 4        # build, arm, upload, and reboot device 4
+```
+
+That runs the steps below; here they are spelled out:
+
+1. Build the firmware you want to install with `make`.
+2. **Arm** the box — from a Mac:
+   ```
+   uv run scripts/bleatctl.py --ota
+   ```
+   It opens a ~5-minute window and advertises connectably as `bleatbox-dfu-<id>`
+   (its 1-based device id, 1–6). (The `ota arm` shell command does the same
+   locally, for bench testing.)
+3. **Upload** the image onto the box's SD card over BLE (here device 4):
+   ```
+   uvx smpmgr --timeout 30 --ble bleatbox-dfu-4 \
+       file upload build/bleatbox-update.bin /SD:/bleatbox-update.bin
+   ```
+4. **Commit** — reboot it so the updater applies the staged image:
+   ```
+   uvx smpmgr --ble bleatbox-dfu-4 os reset
+   ```
+
+Repeat per box (an armed box doesn't relay, so there's no swarm-wide broadcast).
+The updater validates the image CRC **before** erasing the old app and deletes
+the staged file only after a verified write, so an interrupted flash just retries
+on the next boot — and a power loss never bricks the box, since double-press-reset
+→ USB drag-drop always recovers it.
+
+**macOS name caching:** macOS caches a peripheral's name, so a box you connected
+to before setting names may still show as `Zephyr`. `--ble` accepts the
+peripheral's address too; find it by scanning (e.g. `BleakScanner.discover()`),
+or clear the cache with `sudo pkill bluetoothd`.
+
+### Trigger format
+
+The OTA-arm command rides inside the standard 16-byte message payload, so a Mac
+sends it exactly like a bleat — it just claims one of the reserved values of the
+global 2-bit command field (see `src/ble_ota.h`):
+
+```
+command field (bits 114..115) = 0b01   OTA arm
+```
+
+It is acted on locally and **never relayed** — a relay burst would disrupt the
+box's own connectable advertising — so it only reaches boxes in direct range.
+
+> **Security:** the trigger and the uploaded image are unauthenticated, matching
+> the project's connectionless-mesh stance. A hostile broadcaster could open a
+> window and push firmware; the image-header CRC guards against corruption, not
+> malice, and USB drag-drop is the backstop.

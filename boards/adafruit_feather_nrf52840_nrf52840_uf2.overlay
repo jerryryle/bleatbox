@@ -33,7 +33,15 @@
 #include <zephyr/dt-bindings/adc/adc.h>
 #include <zephyr/dt-bindings/adc/nrf-saadc.h>
 
+/* OTA flash split: updater @0x26000, this app @0x3e000. */
+#include "bleatbox-partitions.dtsi"
+
 / {
+	chosen {
+		/* The app runs from main_app; the updater owns 0x26000. */
+		zephyr,code-partition = &main_app;
+	};
+
 	aliases {
 		sdhc0 = &sdhc0;
 	};

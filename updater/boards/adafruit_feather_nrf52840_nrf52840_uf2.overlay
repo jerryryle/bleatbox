@@ -1,0 +1,35 @@
+/*
+ * Devicetree overlay for the BleatBox second-stage updater.
+ *
+ * Shares the OTA partition map with the main app and brings up just the
+ * SPI1 + SD card needed to read the staged firmware image.  The board
+ * default `zephyr,code-partition = &code_partition` is kept, so the
+ * updater links at 0x26000 — where the UF2 bootloader hands off.
+ */
+
+/* OTA flash split: updater @0x26000 (code_partition), main_app @0x3e000. */
+#include "../../boards/bleatbox-partitions.dtsi"
+
+/ {
+	aliases {
+		sdhc0 = &sdhc0;
+	};
+};
+
+&spi1 {
+	status = "okay";
+	cs-gpios = <&gpio1 8 GPIO_ACTIVE_LOW>;
+
+	sdhc0: sdhc@0 {
+		compatible = "zephyr,sdhc-spi-slot";
+		reg = <0>;
+		spi-max-frequency = <8000000>;
+		status = "okay";
+
+		mmc {
+			compatible = "zephyr,sdmmc-disk";
+			disk-name = "SD";
+			status = "okay";
+		};
+	};
+};

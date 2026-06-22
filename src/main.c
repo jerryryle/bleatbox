@@ -27,6 +27,7 @@
 #include "sounds.h"
 #include "audio.h"
 #include "ble.h"
+#include "ota.h"
 
 LOG_MODULE_REGISTER(bleatbox, LOG_LEVEL_INF);
 
@@ -80,6 +81,11 @@ static K_TIMER_DEFINE(g_vibration_cooldown_timer, cooldown_expired, NULL);
 
 static void handle_vibration(void)
 {
+    if (ota_is_active()) {
+        LOG_INF("Vibration dropped — OTA update in progress");
+        return;
+    }
+
     /*
      * A playing sound (e.g. a BLE-assigned one) shakes the enclosure;
      * don't broadcast assignments for vibration we likely caused
@@ -122,6 +128,11 @@ static void handle_vibration(void)
 
 static void handle_ble_rx(const struct event *evt)
 {
+    if (ota_is_active()) {
+        LOG_INF("BLE RX dropped — OTA update in progress");
+        return;
+    }
+
     if (audio_is_playing()) {
         LOG_INF("BLE RX dropped — sound already playing");
         return;
@@ -176,6 +187,9 @@ int main(void)
     if (ble_init(&event_q)) {
         LOG_ERR("BLE init failed — broadcasts and relays disabled");
     }
+    if (ota_init(&event_q)) {
+        LOG_ERR("OTA init failed — over-the-air updates disabled");
+    }
 
     struct device_config cfg;
     device_config_defaults(&cfg);
@@ -207,6 +221,7 @@ int main(void)
     if (ble_start(cfg.id, cfg.relay_ttl)) {
         LOG_ERR("BLE start failed — broadcasts and relays disabled");
     }
+    ota_set_device_id(cfg.id);
 
     g_drop_vibration_events = false;
 
@@ -248,6 +263,12 @@ int main(void)
             /* Keep suppressing until the enclosure rings down. */
             k_timer_start(&g_vibration_cooldown_timer,
                           K_MSEC(VIBRATION_COOLDOWN_MS), K_NO_WAIT);
+            break;
+        case EVENT_OTA_ARM:
+            ota_start();
+            break;
+        case EVENT_OTA_CANCEL:
+            ota_cancel();
             break;
         }
     }
