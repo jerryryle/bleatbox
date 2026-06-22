@@ -8,7 +8,7 @@
 #include "broadcast_log_core.h"
 
 static bool check(const struct broadcast_log *log,
-                  uint8_t originator, uint8_t seq)
+                  uint8_t originator, uint16_t seq)
 {
     for (int i = 0; i < log->count; i++) {
         if (log->entries[i].originator == originator &&
@@ -20,7 +20,7 @@ static bool check(const struct broadcast_log *log,
 }
 
 static void record(struct broadcast_log *log,
-                   uint8_t originator, uint8_t seq)
+                   uint8_t originator, uint16_t seq)
 {
     log->entries[log->next].originator = originator;
     log->entries[log->next].seq = seq;
@@ -38,7 +38,7 @@ void broadcast_log_core_init(struct broadcast_log *log)
 }
 
 bool broadcast_log_core_check_and_record(struct broadcast_log *log,
-                                         uint8_t originator, uint8_t seq)
+                                         uint8_t originator, uint16_t seq)
 {
     bool duplicate = check(log, originator, seq);
     if (!duplicate) {
@@ -48,7 +48,7 @@ bool broadcast_log_core_check_and_record(struct broadcast_log *log,
 }
 
 void broadcast_log_core_record(struct broadcast_log *log,
-                               uint8_t originator, uint8_t seq)
+                               uint8_t originator, uint16_t seq)
 {
     record(log, originator, seq);
 }

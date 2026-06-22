@@ -16,8 +16,7 @@
  *                     [12..17] sound      (6 bits; 0x3F = play nothing)
  *                     [18]     type       (1 bit; 0 = goat, 1 = misc)
  *   bits [114..115] command   (2 bits, global; 00 = play)
- *   bits [116..123] seq        (8 bits, relay sequence; macOS path only)
- *   bits [124..127] reserved
+ *   bits [116..127] seq        (12 bits, relay sequence for mesh dedup)
  *
  * This module is pure (no Zephyr/BLE deps) so it links into the host test
  * build and pins the bit-packing the Python sender mirrors.
@@ -56,6 +55,8 @@
 /* Bit offsets of the global fields, above the six slots. */
 #define MESSAGE_CMD_OFFSET   (MESSAGE_SLOTS * MESSAGE_SLOT_BITS) /* 114 */
 #define MESSAGE_SEQ_OFFSET   (MESSAGE_CMD_OFFSET + 2)            /* 116 */
+#define MESSAGE_SEQ_BITS     12
+#define MESSAGE_SEQ_MASK     0x0FFF
 
 struct message_slot {
     uint8_t  sound;    /* 6-bit sound index */
@@ -78,8 +79,11 @@ void message_parse_slot(const uint8_t payload[16], uint8_t slot,
 /** Global 2-bit command from the payload. */
 uint8_t message_get_command(const uint8_t payload[16]);
 
-/** 8-bit relay sequence number from the payload. */
-uint8_t message_get_seq(const uint8_t payload[16]);
+/** 12-bit relay sequence number from the payload. */
+uint16_t message_get_seq(const uint8_t payload[16]);
+
+/** Write the 12-bit relay sequence number into the payload (low 12 bits used). */
+void message_set_seq(uint8_t payload[16], uint16_t seq);
 
 /**
  * Write @p sound (6-bit), @p type (1-bit) and @p delay (12-bit) into @p slot.

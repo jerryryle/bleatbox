@@ -15,12 +15,12 @@ void broadcast_log_init(void);
  *
  * @return true if the pair was already in the log (duplicate).
  */
-bool broadcast_log_check_and_record(uint8_t originator, uint8_t seq);
+bool broadcast_log_check_and_record(uint8_t originator, uint16_t seq);
 
 /**
  * Unconditionally record (originator, seq) in the log.
  * Use when the caller knows the entry is new (e.g. its own broadcast).
  */
-void broadcast_log_record(uint8_t originator, uint8_t seq);
+void broadcast_log_record(uint8_t originator, uint16_t seq);
 
 #endif /* BROADCAST_LOG_H_ */

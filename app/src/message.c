@@ -58,9 +58,14 @@ uint8_t message_get_command(const uint8_t payload[16])
     return (uint8_t)read_bits(payload, MESSAGE_CMD_OFFSET, 2);
 }
 
-uint8_t message_get_seq(const uint8_t payload[16])
+uint16_t message_get_seq(const uint8_t payload[16])
 {
-    return (uint8_t)read_bits(payload, MESSAGE_SEQ_OFFSET, 8);
+    return (uint16_t)read_bits(payload, MESSAGE_SEQ_OFFSET, MESSAGE_SEQ_BITS);
+}
+
+void message_set_seq(uint8_t payload[16], uint16_t seq)
+{
+    write_bits(payload, MESSAGE_SEQ_OFFSET, MESSAGE_SEQ_BITS, seq);
 }
 
 void message_pack_slot(uint8_t payload[16], uint8_t slot,

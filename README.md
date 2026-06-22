@@ -273,7 +273,7 @@ reboot.
 
 Every BLE message is the same 16-byte payload of six positional slots — a 6-bit
 sound index, a 1-bit goat/misc type, and a 12-bit delay each, plus a global
-2-bit command and an 8-bit sequence number. A tissue pull fills the slots with
+2-bit command and a 12-bit sequence number. A tissue pull fills the slots with
 random goat sounds and broadcasts it; each device plays the slot matching its id
 (`id - 1`). Up to six devices are addressed.
 

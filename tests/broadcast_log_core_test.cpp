@@ -50,6 +50,18 @@ TEST_F(BroadcastLogCoreTest, InitResetsLog)
     EXPECT_FALSE(broadcast_log_core_check_and_record(&log, 0x01, 0));
 }
 
+TEST_F(BroadcastLogCoreTest, DistinguishesWideSeqValues)
+{
+    /* seq is 12-bit now: values above 0xFF must not alias each other. */
+    EXPECT_FALSE(broadcast_log_core_check_and_record(&log, 0x01, 0x100));
+    EXPECT_FALSE(broadcast_log_core_check_and_record(&log, 0x01, 0x200));
+    EXPECT_FALSE(broadcast_log_core_check_and_record(&log, 0x01, 0xFFF));
+    EXPECT_TRUE(broadcast_log_core_check_and_record(&log, 0x01, 0x100));
+    EXPECT_TRUE(broadcast_log_core_check_and_record(&log, 0x01, 0xFFF));
+    /* The low byte of 0x100 is 0x00 — must not be treated as seen. */
+    EXPECT_FALSE(broadcast_log_core_check_and_record(&log, 0x01, 0x00));
+}
+
 TEST_F(BroadcastLogCoreTest, FillToCapacity)
 {
     for (uint8_t i = 0; i < BROADCAST_LOG_SIZE; i++) {

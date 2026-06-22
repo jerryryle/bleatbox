@@ -160,6 +160,39 @@ TEST(Message, SlotForId)
     EXPECT_FALSE(s.play);
 }
 
+TEST(Message, SeqRoundTripsAcrossFull12Bits)
+{
+    for (uint16_t seq : {0, 1, 255, 256, 4094, 4095}) {
+        uint8_t payload[16] = {0};
+        message_set_seq(payload, seq);
+        EXPECT_EQ(message_get_seq(payload), seq) << "seq " << (int)seq;
+    }
+}
+
+TEST(Message, SeqDoesNotDisturbSlotsOrCommand)
+{
+    uint8_t payload[16] = {0};
+    message_pack_slot(payload, 5, 7, MESSAGE_TYPE_MISC, 4095);
+    message_set_command(payload, MESSAGE_CMD_PLAY);
+    message_set_seq(payload, 0xFFF);
+
+    EXPECT_EQ(message_get_seq(payload), 0xFFF);
+    EXPECT_EQ(message_get_command(payload), MESSAGE_CMD_PLAY);
+
+    struct message_slot s;
+    message_parse_slot(payload, 5, &s);
+    EXPECT_EQ(s.sound, 7);
+    EXPECT_EQ(s.type, MESSAGE_TYPE_MISC);
+    EXPECT_EQ(s.delay_ms, 4095);
+
+    /* The other slots stay clean. */
+    for (uint8_t i = 0; i < 5; i++) {
+        message_parse_slot(payload, i, &s);
+        EXPECT_EQ(s.sound, 0) << "slot " << (int)i;
+        EXPECT_EQ(s.delay_ms, 0) << "slot " << (int)i;
+    }
+}
+
 TEST(Message, CommandRoundTripsWithoutDisturbingSlots)
 {
     for (uint8_t command = 0; command <= 3; command++) {

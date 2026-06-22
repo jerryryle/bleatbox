@@ -24,7 +24,7 @@ tests/message_test.cpp pins the two ends together:
                       [12..17] sound      (6 bits; 0x3F = play nothing)
                       [18]     type       (1 bit; 0 = goat, 1 = misc)
     bits [114..115] command   (2 bits, global; 00 = play)
-    bits [116..123] seq        (8 bits, relay sequence)
+    bits [116..127] seq        (12 bits, relay sequence)
 
 Usage (with uv — installs dependencies automatically):
     uv run scripts/bleatctl.py --id 1 --sound 1 --delay 1000 \
@@ -59,6 +59,8 @@ MESSAGE_TYPE_GOAT = 0
 MESSAGE_TYPE_MISC = 1
 MESSAGE_CMD_OFFSET = MESSAGE_SLOTS * MESSAGE_SLOT_BITS  # 114
 MESSAGE_SEQ_OFFSET = MESSAGE_CMD_OFFSET + 2             # 116
+MESSAGE_SEQ_BITS = 12
+MESSAGE_SEQ_MASK = 0x0FFF
 MARKER_UUID16 = "FB42"
 
 # OTA arming rides the same payload, marked by command 0b01.  Mirrors
@@ -90,7 +92,7 @@ def pack_payload(slots: dict[int, tuple[int, int]], type_: int,
         field = (type_ & 0x1) << 18 | (sound & 0x3F) << 12 | (delay & 0xFFF)
         write_bits(buf, slot * MESSAGE_SLOT_BITS, MESSAGE_SLOT_BITS, field)
     write_bits(buf, MESSAGE_CMD_OFFSET, 2, command & 0x3)
-    write_bits(buf, MESSAGE_SEQ_OFFSET, 8, seq & 0xFF)
+    write_bits(buf, MESSAGE_SEQ_OFFSET, MESSAGE_SEQ_BITS, seq & MESSAGE_SEQ_MASK)
     return bytes(buf)
 
 
@@ -98,7 +100,7 @@ def pack_ota_payload(seq: int) -> bytes:
     """Build a 16-byte OTA-arm payload (mirrors ble_ota_encode)."""
     buf = bytearray(16)
     write_bits(buf, MESSAGE_CMD_OFFSET, 2, BLE_OTA_CMD)
-    write_bits(buf, MESSAGE_SEQ_OFFSET, 8, seq & 0xFF)
+    write_bits(buf, MESSAGE_SEQ_OFFSET, MESSAGE_SEQ_BITS, seq & MESSAGE_SEQ_MASK)
     return bytes(buf)
 
 
@@ -114,15 +116,15 @@ def payload_to_uuid_string(canonical: bytes) -> str:
 
 
 def next_seq() -> int:
-    """Pick a random nonce for the (originator, seq) dedup key.
+    """Pick a random 12-bit nonce for the (originator, seq) dedup key.
 
-    Not a monotonic counter: a persisted sequence restarts at 0 whenever its
-    state is lost (a fresh machine, a cleared home dir), colliding with
-    (originator, seq) pairs devices still hold in their dedup rings so the
-    message gets dropped as a duplicate.  A random nonce carries no state to
-    fall behind, matching the firmware's per-trigger nonce in src/ble.c.
+    The Mac sender is stateless per run, so it can't keep the firmware's
+    incrementing counter; a random nonce needs no persisted state (which would
+    restart at 0 when lost and collide with entries devices still hold). The
+    firmware dedup only checks existence, so a random value is fine, and 12
+    bits keeps collisions rare across the dedup ring.
     """
-    return random.randint(0, 0xFF)
+    return random.randint(0, MESSAGE_SEQ_MASK)
 
 
 def parse_args() -> argparse.Namespace:
