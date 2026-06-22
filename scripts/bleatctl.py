@@ -46,7 +46,7 @@ The same payload also arms a box for an over-the-air update (see the README,
 # ///
 
 import argparse
-import os
+import random
 import sys
 
 MESSAGE_SLOTS = 6
@@ -60,10 +60,6 @@ MARKER_UUID16 = "FB42"
 # src/ble_ota.h.  An armed box becomes connectable for SMP; the operator
 # drives the upload and reboot over that connection (see the README).
 BLE_OTA_CMD = 0x01
-
-# The relay dedup is keyed on (originator, seq); persist seq across runs so two
-# invocations don't collide and get dropped as duplicates.
-SEQ_STATE_FILE = os.path.expanduser("~/.bleatbox_msg_seq")
 
 # Advertise for a short burst so passive scanners catch it, then stop.
 BURST_SECONDS = 1.5
@@ -112,18 +108,15 @@ def payload_to_uuid_string(canonical: bytes) -> str:
 
 
 def next_seq() -> int:
-    """Read, increment (mod 256), and persist the relay sequence number."""
-    try:
-        with open(SEQ_STATE_FILE) as f:
-            seq = (int(f.read().strip()) + 1) & 0xFF
-    except (OSError, ValueError):
-        seq = 0
-    try:
-        with open(SEQ_STATE_FILE, "w") as f:
-            f.write(str(seq))
-    except OSError as e:
-        print(f"warning: could not persist seq ({e})", file=sys.stderr)
-    return seq
+    """Pick a random nonce for the (originator, seq) dedup key.
+
+    Not a monotonic counter: a persisted sequence restarts at 0 whenever its
+    state is lost (a fresh machine, a cleared home dir), colliding with
+    (originator, seq) pairs devices still hold in their dedup rings so the
+    message gets dropped as a duplicate.  A random nonce carries no state to
+    fall behind, matching the firmware's per-trigger nonce in src/ble.c.
+    """
+    return random.randint(0, 0xFF)
 
 
 def parse_args() -> argparse.Namespace:
