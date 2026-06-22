@@ -12,6 +12,8 @@ enum event_type {
     EVENT_BLE_RX,      /* BLE broadcast with our assignment received  */
     EVENT_AUDIO_START, /* Codec claimed — playback or sine test began */
     EVENT_AUDIO_DONE,  /* Codec released — playback or sine test over */
+    EVENT_OTA_ARM,     /* BLE OTA arm: open an update window           */
+    EVENT_OTA_CANCEL,  /* OTA window timed out: close it               */
 };
 
 struct event {

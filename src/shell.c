@@ -14,6 +14,7 @@
 #include "accel.h"
 #include "audio.h"
 #include "battery.h"
+#include "ota.h"
 #include "sdcard.h"
 #include "sounds.h"
 
@@ -229,6 +230,32 @@ static int cmd_battery(const struct shell *sh, size_t argc, char **argv)
     return 0;
 }
 
+static int cmd_ota(const struct shell *sh, size_t argc, char **argv)
+{
+    ARG_UNUSED(argc);
+
+    if (!strcmp(argv[1], "status")) {
+        shell_print(sh, "OTA window: %s",
+                    ota_is_active() ? "open" : "closed");
+        return 0;
+    }
+
+    if (!strcmp(argv[1], "arm")) {
+        ota_start();
+        shell_print(sh, "OTA window opened");
+        return 0;
+    }
+
+    if (!strcmp(argv[1], "cancel")) {
+        ota_cancel();
+        shell_print(sh, "OTA window closed");
+        return 0;
+    }
+
+    shell_error(sh, "Usage: ota status|arm|cancel");
+    return -EINVAL;
+}
+
 SHELL_CMD_ARG_REGISTER(play, NULL,
                        "Play a sound: play goat|misc <index>",
                        cmd_play, 3, 0);
@@ -253,3 +280,7 @@ SHELL_CMD_ARG_REGISTER(threshold, NULL,
 SHELL_CMD_ARG_REGISTER(battery, NULL,
                        "Read battery voltage and approximate charge",
                        cmd_battery, 1, 0);
+
+SHELL_CMD_ARG_REGISTER(ota, NULL,
+                       "Over-the-air update window: ota status|arm|cancel",
+                       cmd_ota, 2, 0);

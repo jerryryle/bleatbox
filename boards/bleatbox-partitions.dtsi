@@ -1,0 +1,30 @@
+/*
+ * OTA flash layout — shared by the main app and the second-stage updater.
+ *
+ * The board's vendored layout gives one 792 KB application region at
+ * 0x26000 (label `code_partition`).  For OTA we split it into:
+ *
+ *   updater   0x26000  96 KB   <- repurposed code_partition; UF2 launches it
+ *   main_app  0x3e000  696 KB   <- the BleatBox application
+ *
+ * The UF2 bootloader always jumps to 0x26000, so the updater lives there
+ * and chain-loads (or reflashes then runs) the main app at 0x3e000.
+ *
+ * Both images include this file so they agree on the map.  The updater
+ * build keeps the board default `zephyr,code-partition = &code_partition`
+ * (i.e. runs at 0x26000); the app overlay re-points it at &main_app.
+ */
+
+&code_partition {
+    /* Was 0x26000 + 0xc6000 (792 KB); now just the 96 KB updater slot. */
+    reg = <0x00026000 0x00018000>;
+};
+
+&flash0 {
+    partitions {
+        main_app: partition@3e000 {
+            label = "main_app";
+            reg = <0x0003e000 0x000ae000>;
+        };
+    };
+};
