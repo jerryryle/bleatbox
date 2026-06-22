@@ -117,11 +117,12 @@ TEST_F(ParseLineTest, IdInvalidHex)
     EXPECT_NE(parse("id ZZ"), 0);
 }
 
-TEST_F(ParseLineTest, UnknownKeyIgnored)
+TEST_F(ParseLineTest, UnknownKeyReported)
 {
-    /* Retired keys (the old 'peers' and 'slot') parse as harmless no-ops. */
-    EXPECT_EQ(parse("peers 01 02 03"), 0);
-    EXPECT_EQ(parse("slot 3"), 0);
+    /* Unrecognized directives (e.g. the retired 'peers' and 'slot', or a
+     * typo) report DEVICE_CONFIG_UNKNOWN_KEY so the loader can warn. */
+    EXPECT_EQ(parse("peers 01 02 03"), DEVICE_CONFIG_UNKNOWN_KEY);
+    EXPECT_EQ(parse("slot 3"), DEVICE_CONFIG_UNKNOWN_KEY);
 }
 
 TEST_F(ParseLineTest, VolumeValid)
@@ -215,9 +216,10 @@ TEST_F(ParseLineTest, RelayTtlTooHigh)
     EXPECT_NE(parse("relay_ttl 256"), 0);
 }
 
-TEST_F(ParseLineTest, UnknownKeyAccepted)
+TEST_F(ParseLineTest, UnknownKeyValueless)
 {
-    EXPECT_EQ(parse("unknown_key value"), 0);
+    EXPECT_EQ(parse("unknown_key value"), DEVICE_CONFIG_UNKNOWN_KEY);
+    EXPECT_EQ(parse("bogus"), DEVICE_CONFIG_UNKNOWN_KEY);
 }
 
 TEST_F(ParseLineTest, LeadingWhitespace)

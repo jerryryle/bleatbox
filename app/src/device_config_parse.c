@@ -94,6 +94,8 @@ int device_config_parse_line(char *line, struct device_config *cfg,
             return -EINVAL;
         }
         cfg->relay_ttl = (uint8_t)v;
+    } else {
+        return DEVICE_CONFIG_UNKNOWN_KEY;
     }
 
     return 0;
