@@ -399,9 +399,10 @@ static bool act_on_message(const uint8_t *payload)
         return false;
     }
 
-    post_play_event(ble_sound_encode(SOUND_TYPE_GOAT, s.sound), s.delay_ms);
-    LOG_INF("Message play: slot=%u sound=%u delay=%u ms",
-            g_local_slot, s.sound, s.delay_ms);
+    post_play_event(ble_sound_encode((enum sound_type)s.type, s.sound),
+                    s.delay_ms);
+    LOG_INF("Message play: slot=%u type=%u sound=%u delay=%u ms",
+            g_local_slot, s.type, s.sound, s.delay_ms);
     return false;
 }
 

@@ -39,6 +39,7 @@ void message_parse_slot(const uint8_t payload[16], uint8_t slot,
     if (slot >= MESSAGE_SLOTS) {
         out->sound = MESSAGE_SOUND_SILENT;
         out->delay_ms = 0;
+        out->type = MESSAGE_TYPE_GOAT;
         out->play = false;
         return;
     }
@@ -47,7 +48,8 @@ void message_parse_slot(const uint8_t payload[16], uint8_t slot,
                                MESSAGE_SLOT_BITS);
 
     out->delay_ms = (uint16_t)(field & 0xFFF);    /* bits 0..11  */
-    out->sound = (uint8_t)((field >> 12) & 0x7F); /* bits 12..18 */
+    out->sound = (uint8_t)((field >> 12) & 0x3F); /* bits 12..17 */
+    out->type = (uint8_t)((field >> 18) & 0x1);   /* bit  18     */
     out->play = (out->sound != MESSAGE_SOUND_SILENT);
 }
 
@@ -62,7 +64,7 @@ uint8_t message_get_seq(const uint8_t payload[16])
 }
 
 void message_pack_slot(uint8_t payload[16], uint8_t slot,
-                       uint8_t sound, uint16_t delay)
+                       uint8_t sound, uint8_t type, uint16_t delay)
 {
     if (slot >= MESSAGE_SLOTS) {
         return;
@@ -77,7 +79,8 @@ void message_pack_slot(uint8_t payload[16], uint8_t slot,
         delay = MESSAGE_DELAY_MAX;
     }
 
-    uint32_t field = (uint32_t)sound << 12 | (uint32_t)delay;
+    uint32_t field = (uint32_t)(type & 0x1) << 18 |
+                     (uint32_t)sound << 12 | (uint32_t)delay;
     write_bits(payload, (unsigned int)slot * MESSAGE_SLOT_BITS,
                MESSAGE_SLOT_BITS, field);
 }

@@ -271,11 +271,11 @@ reboot.
 
 ### Messaging format and sending from macOS
 
-Every BLE message is the same 16-byte payload of six positional slots — a 7-bit
-sound and 12-bit delay each, plus a global 2-bit command and an 8-bit sequence
-number. A tissue pull fills the slots with random sounds and broadcasts it;
-each device plays the slot matching its id (`id - 1`). Up to six devices are
-addressed.
+Every BLE message is the same 16-byte payload of six positional slots — a 6-bit
+sound index, a 1-bit goat/misc type, and a 12-bit delay each, plus a global
+2-bit command and an 8-bit sequence number. A tissue pull fills the slots with
+random goat sounds and broadcasts it; each device plays the slot matching its id
+(`id - 1`). Up to six devices are addressed.
 
 Devices exchange this as manufacturer-specific data, which macOS CoreBluetooth
 cannot send (it silently drops it). It *can* advertise 128-bit Service UUIDs, so
@@ -294,9 +294,10 @@ so [`uv run`](https://docs.astral.sh/uv/) fetches PyObjC into an ephemeral
 environment automatically — no manual install or virtualenv needed. (Without uv:
 `pip install pyobjc-framework-CoreBluetooth` then run with `python`.)
 
-A `--sound` of `127` — or any id you don't name — stays silent. The sender
-advertises a short burst and increments a persisted sequence number each run, so
-repeated sends fire once each.
+A `--sound` of `63` — or any id you don't name — stays silent. Add `--type misc`
+to play from the misc bank instead of goat (boxes only ever compose goat
+themselves; misc is a Mac-only trigger). The sender advertises a short burst
+with a random per-message sequence nonce, so repeated sends fire once each.
 
 ## Shell Commands
 

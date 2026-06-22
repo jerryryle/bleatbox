@@ -21,16 +21,19 @@ tests/message_test.cpp pins the two ends together:
 
     slot i -> bits [i*19 .. i*19+18]   (i = 0..5)
       within a slot:  [0..11]  delay_ms  (12 bits, 0..4095)
-                      [12..18] sound      (7 bits; 0x7F = play nothing)
+                      [12..17] sound      (6 bits; 0x3F = play nothing)
+                      [18]     type       (1 bit; 0 = goat, 1 = misc)
     bits [114..115] command   (2 bits, global; 00 = play)
     bits [116..123] seq        (8 bits, relay sequence)
 
 Usage (with uv — installs dependencies automatically):
     uv run scripts/bleatctl.py --id 1 --sound 1 --delay 1000 \
-                               --id 6 --sound 3 --delay 1500
+                               --id 6 --sound 3 --delay 1500 --type misc
 
 Each --id must be paired with a matching --sound and --delay (given in the
-same order).  Without uv, install the CoreBluetooth framework yourself:
+same order).  --type (goat|misc, default goat) is optional and applies to all
+slots in the message — boxes only ever play goat; a Mac can request misc.
+Without uv, install the CoreBluetooth framework yourself:
     pip install pyobjc-framework-CoreBluetooth
 
 The same payload also arms a box for an over-the-air update (see the README,
@@ -51,7 +54,9 @@ import sys
 
 MESSAGE_SLOTS = 6
 MESSAGE_SLOT_BITS = 19
-MESSAGE_SOUND_SILENT = 0x7F
+MESSAGE_SOUND_SILENT = 0x3F
+MESSAGE_TYPE_GOAT = 0
+MESSAGE_TYPE_MISC = 1
 MESSAGE_CMD_OFFSET = MESSAGE_SLOTS * MESSAGE_SLOT_BITS  # 114
 MESSAGE_SEQ_OFFSET = MESSAGE_CMD_OFFSET + 2             # 116
 MARKER_UUID16 = "FB42"
@@ -72,16 +77,17 @@ def write_bits(buf: bytearray, start_bit: int, num_bits: int, value: int) -> Non
             buf[bit >> 3] |= 1 << (bit & 7)
 
 
-def pack_payload(slots: dict[int, tuple[int, int]], command: int, seq: int) -> bytes:
+def pack_payload(slots: dict[int, tuple[int, int]], type_: int,
+                 command: int, seq: int) -> bytes:
     """Build the 16-byte canonical payload.
 
     slots maps slot index -> (sound, delay_ms).  Unspecified slots get the
-    silent sentinel.
+    silent sentinel.  type_ (0 = goat, 1 = misc) applies to every slot.
     """
     buf = bytearray(16)
     for slot in range(MESSAGE_SLOTS):
         sound, delay = slots.get(slot, (MESSAGE_SOUND_SILENT, 0))
-        field = (sound & 0x7F) << 12 | (delay & 0xFFF)
+        field = (type_ & 0x1) << 18 | (sound & 0x3F) << 12 | (delay & 0xFFF)
         write_bits(buf, slot * MESSAGE_SLOT_BITS, MESSAGE_SLOT_BITS, field)
     write_bits(buf, MESSAGE_CMD_OFFSET, 2, command & 0x3)
     write_bits(buf, MESSAGE_SEQ_OFFSET, 8, seq & 0xFF)
@@ -126,9 +132,11 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--id", type=int, action="append", dest="ids",
                    help="device id 1..6 (repeatable)")
     p.add_argument("--sound", type=int, action="append",
-                   help="sound index 0..127, or 127 for silent (repeatable)")
+                   help="sound index 0..62, or 63 for silent (repeatable)")
     p.add_argument("--delay", type=int, action="append",
                    help="delay in ms 0..4095 (repeatable)")
+    p.add_argument("--type", choices=("goat", "misc"), default="goat",
+                   help="sound bank for all slots (default goat)")
     p.add_argument("--command", type=int, default=0,
                    help="global command 0..3 (0 = play, others reserved)")
     p.add_argument("--ota", action="store_true",
@@ -151,8 +159,8 @@ def parse_args() -> argparse.Namespace:
     for dev_id, sound, delay in zip(args.ids, args.sound, args.delay):
         if not 1 <= dev_id <= MESSAGE_SLOTS:
             p.error(f"id {dev_id} out of range 1..{MESSAGE_SLOTS}")
-        if not 0 <= sound <= 0x7F:
-            p.error(f"sound {sound} out of range 0..127")
+        if not 0 <= sound <= 0x3F:
+            p.error(f"sound {sound} out of range 0..63")
         if not 0 <= delay <= 0xFFF:
             p.error(f"delay {delay} out of range 0..4095")
         slot = dev_id - 1
@@ -208,10 +216,12 @@ def main() -> None:
         payload = pack_ota_payload(seq)
         print("Sending OTA arm")
     else:
-        payload = pack_payload(args.slots, args.command, seq)
+        type_ = MESSAGE_TYPE_MISC if args.type == "misc" else MESSAGE_TYPE_GOAT
+        payload = pack_payload(args.slots, type_, args.command, seq)
         active = ", ".join(f"id {s + 1}: sound {snd} @ {d} ms"
                            for s, (snd, d) in sorted(args.slots.items()))
         print(f"Sending [{active}]")
+        print(f"  type={args.type}")
         print(f"  command={args.command}")
 
     payload_uuid = payload_to_uuid_string(payload)

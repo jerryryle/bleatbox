@@ -26,11 +26,14 @@ TEST(Message, AllZeroSlotsPlaySoundZero)
 TEST(Message, EachSlotRoundTripsItsOwnFields)
 {
     uint8_t payload[16] = {0};
-    const uint8_t sounds[MESSAGE_SLOTS] = {1, 5, 9, 42, 100, 13};
+    const uint8_t sounds[MESSAGE_SLOTS] = {1, 5, 9, 42, 62, 13};
     const uint16_t delays[MESSAGE_SLOTS] = {0, 250, 1000, 1500, 4095, 7};
+    const uint8_t types[MESSAGE_SLOTS] = {MESSAGE_TYPE_GOAT, MESSAGE_TYPE_MISC,
+                                          MESSAGE_TYPE_GOAT, MESSAGE_TYPE_MISC,
+                                          MESSAGE_TYPE_MISC, MESSAGE_TYPE_GOAT};
 
     for (uint8_t s = 0; s < MESSAGE_SLOTS; s++) {
-        message_pack_slot(payload, s, sounds[s], delays[s]);
+        message_pack_slot(payload, s, sounds[s], types[s], delays[s]);
     }
 
     for (uint8_t s = 0; s < MESSAGE_SLOTS; s++) {
@@ -38,6 +41,7 @@ TEST(Message, EachSlotRoundTripsItsOwnFields)
         message_parse_slot(payload, s, &slot);
         EXPECT_EQ(slot.sound, sounds[s]) << "slot " << (int)s;
         EXPECT_EQ(slot.delay_ms, delays[s]) << "slot " << (int)s;
+        EXPECT_EQ(slot.type, types[s]) << "slot " << (int)s;
         EXPECT_TRUE(slot.play) << "slot " << (int)s;
     }
 }
@@ -45,7 +49,7 @@ TEST(Message, EachSlotRoundTripsItsOwnFields)
 TEST(Message, SilentSentinelDoesNotPlay)
 {
     uint8_t payload[16] = {0};
-    message_pack_slot(payload, 3, MESSAGE_SOUND_SILENT, 500);
+    message_pack_slot(payload, 3, MESSAGE_SOUND_SILENT, MESSAGE_TYPE_GOAT, 500);
 
     struct message_slot slot;
     message_parse_slot(payload, 3, &slot);
@@ -53,10 +57,30 @@ TEST(Message, SilentSentinelDoesNotPlay)
     EXPECT_FALSE(slot.play);
 }
 
+TEST(Message, TypeBitRoundTrips)
+{
+    uint8_t payload[16] = {0};
+
+    /* Same sound/delay, different type, in adjacent slots. */
+    message_pack_slot(payload, 0, 5, MESSAGE_TYPE_GOAT, 100);
+    message_pack_slot(payload, 1, 5, MESSAGE_TYPE_MISC, 100);
+
+    struct message_slot g, m;
+    message_parse_slot(payload, 0, &g);
+    message_parse_slot(payload, 1, &m);
+
+    EXPECT_EQ(g.type, MESSAGE_TYPE_GOAT);
+    EXPECT_EQ(m.type, MESSAGE_TYPE_MISC);
+    EXPECT_EQ(g.sound, 5);
+    EXPECT_EQ(m.sound, 5);
+    EXPECT_TRUE(g.play);
+    EXPECT_TRUE(m.play);
+}
+
 TEST(Message, DelayBoundary)
 {
     uint8_t payload[16] = {0};
-    message_pack_slot(payload, 5, 2, 4095);
+    message_pack_slot(payload, 5, 2, MESSAGE_TYPE_GOAT, 4095);
 
     struct message_slot slot;
     message_parse_slot(payload, 5, &slot);
@@ -69,7 +93,7 @@ TEST(Message, AdjacentSlotsAreIndependent)
 {
     uint8_t payload[16] = {0};
     /* Fill slot 2 with all-ones in every field; neighbors must stay clean. */
-    message_pack_slot(payload, 2, 0x7F, 0xFFF);
+    message_pack_slot(payload, 2, MESSAGE_SOUND_SILENT, MESSAGE_TYPE_MISC, 0xFFF);
 
     struct message_slot lo, hi;
     message_parse_slot(payload, 1, &lo);
@@ -93,7 +117,7 @@ TEST(Message, OutOfRangeSlotDoesNotPlay)
     /* Packing an out-of-range slot must not corrupt the buffer. */
     uint8_t before[16];
     memcpy(before, payload, sizeof(payload));
-    message_pack_slot(payload, MESSAGE_SLOTS, 3, 100);
+    message_pack_slot(payload, MESSAGE_SLOTS, 3, MESSAGE_TYPE_GOAT, 100);
     EXPECT_EQ(memcmp(before, payload, sizeof(payload)), 0);
 }
 
@@ -102,15 +126,15 @@ TEST(Message, PackClampsOutOfRangeFields)
     uint8_t payload[16] = {0};
 
     /* delay above the 12-bit max clamps to it. */
-    message_pack_slot(payload, 0, 4, 9999);
+    message_pack_slot(payload, 0, 4, MESSAGE_TYPE_GOAT, 9999);
     struct message_slot s0;
     message_parse_slot(payload, 0, &s0);
     EXPECT_EQ(s0.delay_ms, MESSAGE_DELAY_MAX);
     EXPECT_EQ(s0.sound, 4);
     EXPECT_TRUE(s0.play);
 
-    /* sound that doesn't fit 7 bits becomes silent, not a wrapped index. */
-    message_pack_slot(payload, 1, 0x80, 100); /* would wrap to 0 */
+    /* sound that doesn't fit 6 bits becomes silent, not a wrapped index. */
+    message_pack_slot(payload, 1, 0x40, MESSAGE_TYPE_GOAT, 100); /* would wrap to 0 */
     struct message_slot s1;
     message_parse_slot(payload, 1, &s1);
     EXPECT_EQ(s1.sound, MESSAGE_SOUND_SILENT);
@@ -141,8 +165,10 @@ TEST(Message, CommandRoundTripsWithoutDisturbingSlots)
     for (uint8_t command = 0; command <= 3; command++) {
         uint8_t payload[16] = {0};
         message_set_command(payload, command);
-        /* Loading slot 5 (highest) must not bleed into the command field. */
-        message_pack_slot(payload, 5, 0x7F, 0xFFF);
+        /* Loading slot 5 (highest) must not bleed into the command field;
+         * its type bit (113) sits right below the command field (114). */
+        message_pack_slot(payload, 5, MESSAGE_SOUND_SILENT, MESSAGE_TYPE_MISC,
+                          0xFFF);
 
         EXPECT_EQ(message_get_command(payload), command);
 
