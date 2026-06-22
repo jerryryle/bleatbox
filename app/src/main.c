@@ -140,16 +140,17 @@ static void handle_ble_rx(const struct event *evt)
 
     enum sound_type type = ble_sound_decode_type(evt->sound);
     uint8_t index = ble_sound_decode_index(evt->sound);
+    const char *type_name = (type == SOUND_TYPE_MISC) ? "misc" : "goat";
 
     char path[32];
     int ret = sounds_get_path(type, index, path, sizeof(path));
     if (ret) {
-        LOG_WRN("BLE RX dropped — invalid sound 0x%02x", evt->sound);
+        LOG_WRN("BLE RX dropped — no %s sound %u", type_name, index);
         return;
     }
 
-    LOG_INF("BLE RX assignment: sound=0x%02x delay=%u ms",
-            evt->sound, evt->delay_ms);
+    LOG_INF("BLE RX assignment: %s sound %u delay=%u ms",
+            type_name, index, evt->delay_ms);
 
     audio_play_sound(path, evt->delay_ms);
 }
