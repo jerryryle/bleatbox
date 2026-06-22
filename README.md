@@ -106,8 +106,13 @@ make test
 The Adafruit Feather nRF52840 Express ships with a UF2 bootloader, not a
 J-Link, so flashing is over USB:
 
-1. **Double-tap the RESET button** on the Feather. The onboard NeoPixel turns
-   green and a `FTHR840BOOT` USB drive appears.
+1. Enter the UF2 bootloader, either way:
+   - **Double-tap the RESET button** on the Feather, or
+   - if the box is already running BleatBox firmware and connected over USB,
+     run `bootloader` at the [serial shell](#serial-console-from-vs-code)
+     (handy once the enclosure is sealed and the button is hard to reach).
+
+   The onboard NeoPixel turns green and a `FTHR840BOOT` USB drive appears.
 2. Run:
    ```bash
    make flash
