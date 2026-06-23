@@ -17,6 +17,7 @@
 #include "accel.h"
 #include "audio.h"
 #include "battery.h"
+#include "device_config.h"
 #include "ota.h"
 #include "sdcard.h"
 #include "sounds.h"
@@ -94,6 +95,14 @@ static int cmd_volume(const struct shell *sh, size_t argc, char **argv)
     }
 
     shell_print(sh, "Volume set to %lu%%", vol);
+
+    ret = device_config_save_volume((uint8_t)vol);
+    if (ret) {
+        shell_warn(sh, "Applied, but failed to save to config: %d", ret);
+        return ret;
+    }
+
+    shell_print(sh, "Saved to config");
     return 0;
 }
 
@@ -200,6 +209,14 @@ static int cmd_threshold(const struct shell *sh, size_t argc, char **argv)
     }
 
     shell_print(sh, "Vibration threshold set to %lu mg", mg);
+
+    ret = device_config_save_accel_threshold((uint16_t)mg);
+    if (ret) {
+        shell_warn(sh, "Applied, but failed to save to config: %d", ret);
+        return ret;
+    }
+
+    shell_print(sh, "Saved to config");
     return 0;
 }
 
@@ -291,7 +308,7 @@ SHELL_CMD_ARG_REGISTER(sinetest, NULL,
                        cmd_sinetest, 2, 0);
 
 SHELL_CMD_ARG_REGISTER(volume, NULL,
-                       "Get or set volume: volume [0-100]",
+                       "Get, or set and save, volume: volume [0-100]",
                        cmd_volume, 1, 1);
 
 SHELL_CMD_ARG_REGISTER(accel, NULL,
@@ -299,7 +316,7 @@ SHELL_CMD_ARG_REGISTER(accel, NULL,
                        cmd_accel, 1, 1);
 
 SHELL_CMD_ARG_REGISTER(threshold, NULL,
-                       "Set vibration threshold in mg: "
+                       "Set vibration threshold in mg and save to config: "
                        "threshold <mg>",
                        cmd_threshold, 2, 0);
 

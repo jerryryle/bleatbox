@@ -28,4 +28,25 @@ void device_config_defaults(struct device_config *cfg);
  */
 int device_config_load(struct device_config *cfg);
 
+/**
+ * Update the accel_threshold directive in /SD:/bleatbox.cfg, leaving every
+ * other line (comments and other directives included) untouched.
+ *
+ * The file is rewritten via a temp file and a rename, so a failure mid-write
+ * leaves the original config intact.
+ *
+ * @param threshold_mg  New wakeup threshold in milli-g.
+ * @return 0 on success, negative errno on failure (e.g. -ENODEV if no SD card).
+ */
+int device_config_save_accel_threshold(uint16_t threshold_mg);
+
+/**
+ * Update the volume directive in /SD:/bleatbox.cfg, leaving every other line
+ * (comments and other directives included) untouched.
+ *
+ * @param volume  New playback volume, 0-100.
+ * @return 0 on success, negative errno on failure (e.g. -ENODEV if no SD card).
+ */
+int device_config_save_volume(uint8_t volume);
+
 #endif /* DEVICE_CONFIG_H_ */
