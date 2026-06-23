@@ -90,3 +90,4 @@ My teammates know, by now, that I'm a prankster, so they'll be expecting *someth
 That chaos is powered by firmware that's written in C on top of the [Zephyr](https://www.zephyrproject.org) real-time operating system. The boxes coordinate their screaming over a BLE mesh, with the whole herd running identical firmware, each configured with a different ID. When a box is triggered by motion, it broadcasts a BLE advertising message with the sound and delay assignments for the other boxes. When a box receives a message, it re-broadcasts it to the other boxes while simultaneously acting on its own assignment.
 
 If you'd like to build your own herd of BleatBoxes, the firmware and CAD are in the [repo](https://github.com/jerryryle/bleatbox). I didn't include the sound files due to copyright, but there are many videos of screaming goats on the web. Grab a few and extract the audio.
+
