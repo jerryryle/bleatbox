@@ -195,6 +195,17 @@ static int cmd_accel(const struct shell *sh, size_t argc, char **argv)
 
 static int cmd_threshold(const struct shell *sh, size_t argc, char **argv)
 {
+    if (argc < 2) {
+        uint16_t mg;
+        int ret = accel_get_threshold(&mg);
+        if (ret) {
+            shell_error(sh, "Failed to read threshold: %d", ret);
+            return ret;
+        }
+        shell_print(sh, "Vibration threshold: %u mg", mg);
+        return 0;
+    }
+
     char *end;
     unsigned long mg = strtoul(argv[1], &end, 10);
     if (end == argv[1] || mg == 0 || mg > UINT16_MAX) {
@@ -316,9 +327,9 @@ SHELL_CMD_ARG_REGISTER(accel, NULL,
                        cmd_accel, 1, 1);
 
 SHELL_CMD_ARG_REGISTER(threshold, NULL,
-                       "Set vibration threshold in mg and save to config: "
-                       "threshold <mg>",
-                       cmd_threshold, 2, 0);
+                       "Get, or set and save, vibration threshold in mg: "
+                       "threshold [mg]",
+                       cmd_threshold, 1, 1);
 
 SHELL_CMD_ARG_REGISTER(battery, NULL,
                        "Read battery voltage and approximate charge",
