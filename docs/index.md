@@ -21,7 +21,7 @@ That turned into a whole thread on Other Solutions, which included [just-in-time
 
 Now, the instant I read the first post, I knew exactly what I was going to make: a tissue box that screamed like a goat when you pulled a tissue out of it. What took me a bit longer to understand was that there would be several of them and they would all be networked such that when you pulled a tissue from one and it started screaming, the others would also begin screaming after a short, random delay.
 
-My office is divided into two large rooms. I installed three in each room and learned that the cohorts are too far apart to trigger each other. However, three going off at once is still pretty funny. Click the image below to see a demo video.
+I built the BleatBox on nights and weekends over the course of a few weeks, then installed them in my office on a Monday evening for everyone to enjoy Tuesday morning. Click the image below to see a video of me testing them right after installation.
 
 [![Installed at my Office](media/img-demo.jpeg "Video demonstrating the BleatBox at my office")](https://youtu.be/knlqAhvIKtw)
 
@@ -55,7 +55,7 @@ I also added a round nub to the bottom of the wall mount so that the back makes 
 
 ![BleatBox mount jankifier](media/img-BleatBox-jank.png "Screenshot of a CAD model of the BleatBox's wall mount with an arrow pointing to the round nub")
 
-The electronics comprise:
+With the enclosure modeled, I could turn to the parts that actually make noise. The electronics comprise:
 
 - an [Adafruit Feather nRF52840 Express](https://www.adafruit.com/product/4062)
 - an [Adafruit Music Maker FeatherWing w/ Amp](https://www.adafruit.com/product/3436)
@@ -77,7 +77,7 @@ Fully assembled, it looks innocent enough. I originally wanted it to be less obv
 
 ![Assembled BleatBox, front view](media/img-assembled-front.jpeg "Photo of the assembled BleatBox from the front, with a box of tissues in it")
 
-The back has a power switch and a USB port so I can reprogram the feather without opening the enclosure. I did wind up adding BLE over-the-air firmware update capability, but I wasn't sure if I'd get to that when I designed the enclosure.
+The back has a power switch and a USB port so I can reprogram the feather without opening the enclosure. I did wind up adding Bluetooth LE (BLE) over-the-air firmware update capability, but I wasn't sure if I'd get to that when I designed the enclosure.
 
 ![Assembled BleatBox, back view](media/img-assembled-back.jpeg "Photo of the assembled BleatBox from the back with speaker grilles, switch, and USB port visible")
 
@@ -85,6 +85,8 @@ The switch and USB port hide behind the wall mount.
 
 ![Assembled BleatBox, back view with wall mount slid halfway on](media/img-assembled-back-with-mount.jpeg "Photo of the assembled BleatBox from the back with the wall mount partially covering the switch and USB port.")
 
-My teammates know, by now, that I'm a prankster, so they'll be expecting *something* when six of these new tissue boxes appear in the office. So as not to disappoint, I ensured that the effect is ridiculously over the top. When you pull a tissue from the box, it plays the sound of a goat screaming. It's always the same sound. But it also chooses random sound assignments and delays for the five other boxes and broadcasts them over Bluetooth LE. This fills the office with a hysterical cacophony for a few seconds.
+My teammates know, by now, that I'm a prankster, so they'll be expecting *something* when six of these new tissue boxes appear in the office. So as not to disappoint, I ensured that the effect is ridiculously over the top. When you pull a tissue from the box, it plays the sound of a goat screaming. It's always the same sound. But it also chooses random sound assignments and delays for the five other boxes and broadcasts them over BLE. This fills the office with a hysterical cacophony for a few seconds.
 
-The [firmware](https://github.com/jerryryle/bleatbox) is written in C, using the [Zephyr](https://www.zephyrproject.org) operating system.
+That chaos is powered by firmware that's written in C on top of the [Zephyr](https://www.zephyrproject.org) real-time operating system. The boxes coordinate their screaming over a BLE mesh, with the whole herd running identical firmware, each configured with a different ID. When a box is triggered by motion, it broadcasts a BLE advertising message with the sound and delay assignments for the other boxes. When a box receives a message, it re-broadcasts it to the other boxes while simultaneously acting on its own assignment.
+
+If you'd like to build your own herd of BleatBoxes, the firmware and CAD are in the [repo](https://github.com/jerryryle/bleatbox). I didn't include the sound files due to copyright, but there are many videos of screaming goats on the web. Grab a few and extract the audio.
