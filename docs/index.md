@@ -25,6 +25,8 @@ I built the BleatBox on nights and weekends over the course of a few weeks, then
 
 [![Installed at my Office](media/img-demo.jpeg "Video demonstrating the BleatBox at my office")](https://youtu.be/knlqAhvIKtw)
 
+My hope is that the BleatBox turns into a kind of office-wide game of Operation: you must surgically extract your tissue or you'll awaken the goats.
+
 
 # The Making Of
 First, I had to decide how I was going to detect a tissue pull. I couldn't use a break-beam across the opening since tissue box openings always have tissues sticking out of them. I bought some [spring-based vibration sensors](https://www.amazon.com/dp/B07S9KR84S), but my tests showed that they were nowhere near sensitive enough to pick up the slight jostling of a box when a tissue is pulled. After more research, I settled on a [LIS2DW12](https://www.mouser.com/ProductDetail/426-SEN0405) accelerometer. It's highly sensitive, very low power, and has a motion interrupt with a configurable threshold.
@@ -90,4 +92,3 @@ My teammates know, by now, that I'm a prankster, so they'll be expecting *someth
 That chaos is powered by firmware that's written in C on top of the [Zephyr](https://www.zephyrproject.org) real-time operating system. The boxes coordinate their screaming over a BLE mesh, with the whole herd running identical firmware, each configured with a different ID. When a box is triggered by motion, it broadcasts a BLE advertising message with the sound and delay assignments for the other boxes. When a box receives a message, it re-broadcasts it to the other boxes while simultaneously acting on its own assignment.
 
 If you'd like to build your own herd of BleatBoxes, the firmware and CAD are in the [repo](https://github.com/jerryryle/bleatbox). I didn't include the sound files due to copyright, but there are many videos of screaming goats on the web. Grab a few and extract the audio.
-
