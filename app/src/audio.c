@@ -254,11 +254,17 @@ static void playback_thread(void *p1, void *p2, void *p3)
             k_msleep(req.delay_ms);
         }
 
+        /* Hold the FS lock for the whole open..close span: FatFs is not
+         * thread-safe, so a config rewrite must not touch the volume while
+         * we stream this file. */
+        sdcard_lock();
+
         struct fs_file_t f;
         fs_file_t_init(&f);
         int ret = fs_open(&f, req.path, FS_O_READ);
         if (ret < 0) {
             LOG_ERR("Cannot open %s: %d", req.path, ret);
+            sdcard_unlock();
             finish_request();
             continue;
         }
@@ -268,6 +274,7 @@ static void playback_thread(void *p1, void *p2, void *p3)
             LOG_ERR("Codec power-up failed: %d", ret);
             vs1053b_power_down();
             fs_close(&f);
+            sdcard_unlock();
             finish_request();
             continue;
         }
@@ -289,6 +296,7 @@ static void playback_thread(void *p1, void *p2, void *p3)
         }
 
         fs_close(&f);
+        sdcard_unlock();
         vs1053b_end_playback();
         vs1053b_power_down();
         finish_request();

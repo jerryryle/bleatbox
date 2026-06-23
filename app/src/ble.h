@@ -39,6 +39,39 @@ int ble_init(struct k_msgq *event_q);
 int ble_start(uint8_t device_id, uint8_t relay_ttl);
 
 /**
+ * Update the relay TTL applied to outgoing and relayed packets.
+ *
+ * @param relay_ttl  Maximum relay hops.  0 disables relaying.
+ * @return 0 on success, -ENODEV if ble_init() did not succeed.
+ */
+int ble_set_relay_ttl(uint8_t relay_ttl);
+
+/**
+ * Get the relay TTL currently applied to outgoing and relayed packets.
+ *
+ * @param[out] relay_ttl  Current maximum relay hops.
+ * @return 0 on success, -ENODEV if ble_init() did not succeed.
+ */
+int ble_get_relay_ttl(uint8_t *relay_ttl);
+
+/**
+ * Update this device's id: restamps outgoing broadcasts as the new originator
+ * and re-selects the playback slot (id - 1).  Does not restart scanning.
+ *
+ * @param device_id  New device id.
+ * @return 0 on success, -ENODEV if ble_init() did not succeed.
+ */
+int ble_set_device_id(uint8_t device_id);
+
+/**
+ * Get this device's active id.
+ *
+ * @param[out] device_id  Current device id.
+ * @return 0 on success, -ENODEV if ble_init() did not succeed.
+ */
+int ble_get_device_id(uint8_t *device_id);
+
+/**
  * Broadcast a 16-byte message payload via BLE extended advertising.
  *
  * The BLE module stamps the packet with this device as originator, an

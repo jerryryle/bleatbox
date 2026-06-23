@@ -665,6 +665,52 @@ int ble_start(uint8_t device_id, uint8_t relay_ttl)
     return 0;
 }
 
+int ble_set_relay_ttl(uint8_t relay_ttl)
+{
+    if (!g_ble_ready) {
+        return -ENODEV;
+    }
+
+    /* A single-byte store; the relay/TX paths read it without locking too. */
+    g_relay_ttl = relay_ttl;
+    LOG_INF("BLE relay TTL set to %u", relay_ttl);
+    return 0;
+}
+
+int ble_get_relay_ttl(uint8_t *relay_ttl)
+{
+    if (!g_ble_ready) {
+        return -ENODEV;
+    }
+
+    *relay_ttl = g_relay_ttl;
+    return 0;
+}
+
+int ble_set_device_id(uint8_t device_id)
+{
+    if (!g_ble_ready) {
+        return -ENODEV;
+    }
+
+    /* Single-byte stores read unlocked by the RX/TX paths, like g_relay_ttl.
+     * Scanning is identity-independent, so no restart is needed. */
+    g_local_device_id = device_id;
+    g_local_slot = message_slot_for_id(device_id);
+    LOG_INF("BLE device id set to 0x%02x (slot %u)", device_id, g_local_slot);
+    return 0;
+}
+
+int ble_get_device_id(uint8_t *device_id)
+{
+    if (!g_ble_ready) {
+        return -ENODEV;
+    }
+
+    *device_id = g_local_device_id;
+    return 0;
+}
+
 void ble_pause(void)
 {
     if (!g_ble_ready) {

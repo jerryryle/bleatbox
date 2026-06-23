@@ -48,6 +48,14 @@ int accel_start(uint16_t threshold_mg);
 int accel_set_threshold(uint16_t threshold_mg);
 
 /**
+ * Get the most recently applied wakeup threshold.
+ *
+ * @param[out] threshold_mg  Current threshold in milli-g.
+ * @return 0 on success, -ENODEV if accel_init() did not succeed.
+ */
+int accel_get_threshold(uint16_t *threshold_mg);
+
+/**
  * Read a single XYZ acceleration sample.
  *
  * @param[out] x  X-axis acceleration.

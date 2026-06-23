@@ -17,6 +17,11 @@
 #include "accel.h"
 #include "audio.h"
 #include "battery.h"
+#include "ble.h"
+#include "compose.h"
+#include "device_config.h"
+#include "device_config_parse.h"
+#include "message.h"
 #include "ota.h"
 #include "sdcard.h"
 #include "sounds.h"
@@ -94,6 +99,14 @@ static int cmd_volume(const struct shell *sh, size_t argc, char **argv)
     }
 
     shell_print(sh, "Volume set to %lu%%", vol);
+
+    ret = device_config_save_volume((uint8_t)vol);
+    if (ret) {
+        shell_warn(sh, "Applied, but failed to save to config: %d", ret);
+        return ret;
+    }
+
+    shell_print(sh, "Saved to config");
     return 0;
 }
 
@@ -186,6 +199,17 @@ static int cmd_accel(const struct shell *sh, size_t argc, char **argv)
 
 static int cmd_threshold(const struct shell *sh, size_t argc, char **argv)
 {
+    if (argc < 2) {
+        uint16_t mg;
+        int ret = accel_get_threshold(&mg);
+        if (ret) {
+            shell_error(sh, "Failed to read threshold: %d", ret);
+            return ret;
+        }
+        shell_print(sh, "Vibration threshold: %u mg", mg);
+        return 0;
+    }
+
     char *end;
     unsigned long mg = strtoul(argv[1], &end, 10);
     if (end == argv[1] || mg == 0 || mg > UINT16_MAX) {
@@ -200,6 +224,137 @@ static int cmd_threshold(const struct shell *sh, size_t argc, char **argv)
     }
 
     shell_print(sh, "Vibration threshold set to %lu mg", mg);
+
+    ret = device_config_save_accel_threshold((uint16_t)mg);
+    if (ret) {
+        shell_warn(sh, "Applied, but failed to save to config: %d", ret);
+        return ret;
+    }
+
+    shell_print(sh, "Saved to config");
+    return 0;
+}
+
+static int cmd_id(const struct shell *sh, size_t argc, char **argv)
+{
+    if (argc < 2) {
+        uint8_t cur;
+        int ret = ble_get_device_id(&cur);
+        if (ret) {
+            shell_error(sh, "Failed to read id: %d", ret);
+            return ret;
+        }
+        shell_print(sh, "Device id: 0x%02X", cur);
+        return 0;
+    }
+
+    uint8_t id;
+    if (device_config_parse_hex_byte(argv[1], &id)) {
+        shell_error(sh, "ID must be a hex byte 00-FF");
+        return -EINVAL;
+    }
+    if (id == MESSAGE_EXT_ORIGINATOR) {
+        shell_error(sh, "ID 0x%02X is reserved", MESSAGE_EXT_ORIGINATOR);
+        return -EINVAL;
+    }
+
+    int ret = ble_set_device_id(id);
+    if (ret) {
+        shell_error(sh, "Failed to set id: %d", ret);
+        return ret;
+    }
+    ota_set_device_id(id);
+
+    shell_print(sh, "Device id set to 0x%02X", id);
+
+    ret = device_config_save_id(id);
+    if (ret) {
+        shell_warn(sh, "Applied, but failed to save to config: %d", ret);
+        return ret;
+    }
+
+    shell_print(sh, "Saved to config");
+    return 0;
+}
+
+static int cmd_delay(const struct shell *sh, size_t argc, char **argv)
+{
+    if (argc < 2) {
+        uint16_t min_ms, max_ms;
+        compose_get_delay(&min_ms, &max_ms);
+        shell_print(sh, "Delay range: %u-%u ms", min_ms, max_ms);
+        return 0;
+    }
+    if (argc < 3) {
+        shell_error(sh, "Usage: delay <min> <max>");
+        return -EINVAL;
+    }
+
+    char *end;
+    unsigned long min_ms = strtoul(argv[1], &end, 10);
+    if (end == argv[1] || min_ms > UINT16_MAX) {
+        shell_error(sh, "Delay values must be 0-%u ms", UINT16_MAX);
+        return -EINVAL;
+    }
+    unsigned long max_ms = strtoul(argv[2], &end, 10);
+    if (end == argv[2] || max_ms > UINT16_MAX) {
+        shell_error(sh, "Delay values must be 0-%u ms", UINT16_MAX);
+        return -EINVAL;
+    }
+    if (min_ms > max_ms) {
+        shell_error(sh, "delay_min (%lu) must not exceed delay_max (%lu)",
+                    min_ms, max_ms);
+        return -EINVAL;
+    }
+
+    compose_set_delay((uint16_t)min_ms, (uint16_t)max_ms);
+    shell_print(sh, "Delay range set to %lu-%lu ms", min_ms, max_ms);
+
+    int ret = device_config_save_delay((uint16_t)min_ms, (uint16_t)max_ms);
+    if (ret) {
+        shell_warn(sh, "Applied, but failed to save to config: %d", ret);
+        return ret;
+    }
+
+    shell_print(sh, "Saved to config");
+    return 0;
+}
+
+static int cmd_relay_ttl(const struct shell *sh, size_t argc, char **argv)
+{
+    if (argc < 2) {
+        uint8_t cur;
+        int ret = ble_get_relay_ttl(&cur);
+        if (ret) {
+            shell_error(sh, "Failed to read relay TTL: %d", ret);
+            return ret;
+        }
+        shell_print(sh, "Relay TTL: %u", cur);
+        return 0;
+    }
+
+    char *end;
+    unsigned long ttl = strtoul(argv[1], &end, 10);
+    if (end == argv[1] || ttl > UINT8_MAX) {
+        shell_error(sh, "Relay TTL must be 0-%u", UINT8_MAX);
+        return -EINVAL;
+    }
+
+    int ret = ble_set_relay_ttl((uint8_t)ttl);
+    if (ret) {
+        shell_error(sh, "Failed to set relay TTL: %d", ret);
+        return ret;
+    }
+
+    shell_print(sh, "Relay TTL set to %lu", ttl);
+
+    ret = device_config_save_relay_ttl((uint8_t)ttl);
+    if (ret) {
+        shell_warn(sh, "Applied, but failed to save to config: %d", ret);
+        return ret;
+    }
+
+    shell_print(sh, "Saved to config");
     return 0;
 }
 
@@ -291,7 +446,7 @@ SHELL_CMD_ARG_REGISTER(sinetest, NULL,
                        cmd_sinetest, 2, 0);
 
 SHELL_CMD_ARG_REGISTER(volume, NULL,
-                       "Get or set volume: volume [0-100]",
+                       "Get, or set and save, volume: volume [0-100]",
                        cmd_volume, 1, 1);
 
 SHELL_CMD_ARG_REGISTER(accel, NULL,
@@ -299,9 +454,24 @@ SHELL_CMD_ARG_REGISTER(accel, NULL,
                        cmd_accel, 1, 1);
 
 SHELL_CMD_ARG_REGISTER(threshold, NULL,
-                       "Set vibration threshold in mg: "
-                       "threshold <mg>",
-                       cmd_threshold, 2, 0);
+                       "Get, or set and save, vibration threshold in mg: "
+                       "threshold [mg]",
+                       cmd_threshold, 1, 1);
+
+SHELL_CMD_ARG_REGISTER(id, NULL,
+                       "Get, or set and save, device id in hex: "
+                       "id [hex]",
+                       cmd_id, 1, 1);
+
+SHELL_CMD_ARG_REGISTER(delay, NULL,
+                       "Get, or set and save, broadcast delay range in ms: "
+                       "delay [min max]",
+                       cmd_delay, 1, 2);
+
+SHELL_CMD_ARG_REGISTER(relay_ttl, NULL,
+                       "Get, or set and save, relay TTL (max mesh hops): "
+                       "relay_ttl [0-255]",
+                       cmd_relay_ttl, 1, 1);
 
 SHELL_CMD_ARG_REGISTER(battery, NULL,
                        "Read battery voltage and approximate charge",

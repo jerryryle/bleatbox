@@ -33,6 +33,11 @@ static struct k_msgq *g_evt_q;
  * accel_start() so it never touches an unready peripheral. */
 static bool g_ready;
 
+/* Most recent threshold applied via accel_set_threshold(), in milli-g.
+ * 0 until the first successful set (accel_start() applies the configured
+ * value during startup). */
+static uint16_t g_threshold_mg;
+
 /*
  * The sensor API stores this pointer (the LIS2DW12 driver hands it
  * back on every interrupt), so it must outlive accel_init().
@@ -52,6 +57,7 @@ static void accel_trigger_handler(const struct device *dev,
 int accel_init(struct k_msgq *event_q)
 {
     g_evt_q = event_q;
+    g_threshold_mg = 0;
     g_ready = device_is_ready(g_accel_dev);
 
     if (!g_ready) {
@@ -81,8 +87,21 @@ int accel_set_threshold(uint16_t threshold_mg)
                               SENSOR_ATTR_UPPER_THRESH, &threshold_val);
     if (ret) {
         LOG_ERR("Failed to set wakeup threshold: %d", ret);
+        return ret;
     }
-    return ret;
+
+    g_threshold_mg = threshold_mg;
+    return 0;
+}
+
+int accel_get_threshold(uint16_t *threshold_mg)
+{
+    if (!g_ready) {
+        return -ENODEV;
+    }
+
+    *threshold_mg = g_threshold_mg;
+    return 0;
 }
 
 int accel_start(uint16_t threshold_mg)
