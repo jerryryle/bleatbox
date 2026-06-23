@@ -23,6 +23,7 @@
 &flash0 {
     partitions {
         main_app: partition@3e000 {
+            compatible = "zephyr,mapped-partition";
             label = "main_app";
             reg = <0x0003e000 0x000ae000>;
         };
