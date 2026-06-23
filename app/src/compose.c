@@ -27,6 +27,18 @@ void compose_init(uint16_t delay_min_ms, uint16_t delay_max_ms,
     g_initialized = true;
 }
 
+void compose_set_delay(uint16_t delay_min_ms, uint16_t delay_max_ms)
+{
+    g_delay_min_ms = delay_min_ms;
+    g_delay_max_ms = delay_max_ms;
+}
+
+void compose_get_delay(uint16_t *delay_min_ms, uint16_t *delay_max_ms)
+{
+    *delay_min_ms = g_delay_min_ms;
+    *delay_max_ms = g_delay_max_ms;
+}
+
 int compose_message(uint8_t payload[16])
 {
     if (!g_initialized) {

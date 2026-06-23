@@ -174,29 +174,49 @@ static int write_all(struct fs_file_t *file, const char *data, size_t len)
     return 0;
 }
 
-/* Copy @p in to @p out line by line.  The @p key directive is replaced in
- * place by @p replacement, preserving its position next to any associated
- * comment; duplicate occurrences are dropped.  If the key isn't present, the
- * replacement is appended at the end. */
-static int rewrite_directive(struct fs_file_t *in, struct fs_file_t *out,
-                             const char *key, const char *replacement)
+/* One directive to write: its key and the full "key value\n" line that should
+ * replace it.  replaced is bookkeeping for the rewrite pass. */
+struct cfg_directive {
+    const char *key;
+    const char *line;
+    bool replaced;
+};
+
+/* The directive in @p dirs whose key matches @p line's first token, or NULL. */
+static struct cfg_directive *match_directive(struct cfg_directive *dirs,
+                                             size_t n, const char *line)
+{
+    for (size_t i = 0; i < n; i++) {
+        if (line_has_key(line, dirs[i].key)) {
+            return &dirs[i];
+        }
+    }
+    return NULL;
+}
+
+/* Copy @p in to @p out line by line.  Each directive in @p dirs is replaced in
+ * place by its line, preserving its position next to any associated comment;
+ * duplicate occurrences are dropped.  Directives not already present are
+ * appended at the end, in array order. */
+static int rewrite_directives(struct fs_file_t *in, struct fs_file_t *out,
+                              struct cfg_directive *dirs, size_t n)
 {
     char buf[LINE_MAX];
     int pos = 0;
     ssize_t nread;
     int ret;
-    bool replaced = false;
 
     while ((nread = fs_read(in, buf + pos, 1)) == 1) {
         if (buf[pos] == '\n') {
             buf[pos + 1] = '\0';
-            if (line_has_key(buf, key)) {
-                if (!replaced) {
-                    ret = write_all(out, replacement, strlen(replacement));
+            struct cfg_directive *d = match_directive(dirs, n, buf);
+            if (d) {
+                if (!d->replaced) {
+                    ret = write_all(out, d->line, strlen(d->line));
                     if (ret) {
                         return ret;
                     }
-                    replaced = true;
+                    d->replaced = true;
                 }
                 /* else: a duplicate of an already-replaced key — drop it. */
             } else {
@@ -222,13 +242,14 @@ static int rewrite_directive(struct fs_file_t *in, struct fs_file_t *out,
     /* A final line with no trailing newline. */
     if (pos > 0) {
         buf[pos] = '\0';
-        if (line_has_key(buf, key)) {
-            if (!replaced) {
-                ret = write_all(out, replacement, strlen(replacement));
+        struct cfg_directive *d = match_directive(dirs, n, buf);
+        if (d) {
+            if (!d->replaced) {
+                ret = write_all(out, d->line, strlen(d->line));
                 if (ret) {
                     return ret;
                 }
-                replaced = true;
+                d->replaced = true;
             }
         } else {
             /* Terminate it so an appended directive lands on its own line. */
@@ -240,15 +261,20 @@ static int rewrite_directive(struct fs_file_t *in, struct fs_file_t *out,
         }
     }
 
-    if (!replaced) {
-        return write_all(out, replacement, strlen(replacement));
+    for (size_t i = 0; i < n; i++) {
+        if (!dirs[i].replaced) {
+            ret = write_all(out, dirs[i].line, strlen(dirs[i].line));
+            if (ret) {
+                return ret;
+            }
+        }
     }
 
     return 0;
 }
 
 /* Do the rewrite, assuming the caller already holds the filesystem lock. */
-static int rewrite_config_file(const char *key, const char *replacement)
+static int rewrite_config_file(struct cfg_directive *dirs, size_t n)
 {
     struct fs_file_t in;
     struct fs_file_t out;
@@ -268,7 +294,7 @@ static int rewrite_config_file(const char *key, const char *replacement)
         return ret;
     }
 
-    ret = rewrite_directive(&in, &out, key, replacement);
+    ret = rewrite_directives(&in, &out, dirs, n);
 
     fs_close(&in);
     fs_close(&out);
@@ -298,36 +324,72 @@ static int rewrite_config_file(const char *key, const char *replacement)
     return 0;
 }
 
-/* Rewrite /SD:/bleatbox.cfg, replacing the @p key directive with @p replacement
- * (a full "key value\n" line) and leaving every other line untouched.
+/* Rewrite /SD:/bleatbox.cfg, replacing each directive in @p dirs in place (or
+ * appending it if absent) and leaving every other line untouched.  Writing all
+ * directives in one pass keeps related values (e.g. delay_min/delay_max)
+ * consistent on disk even if a later one fails.
  *
  * Holds the filesystem lock across the whole rewrite so it cannot race audio
  * playback reading the SD card on another thread. */
-static int save_directive(const char *key, const char *replacement)
+static int save_directives(struct cfg_directive *dirs, size_t n)
 {
     if (!sdcard_is_mounted()) {
         return -ENODEV;
     }
 
     sdcard_lock();
-    int ret = rewrite_config_file(key, replacement);
+    int ret = rewrite_config_file(dirs, n);
     sdcard_unlock();
 
     return ret;
 }
 
-int device_config_save_accel_threshold(uint16_t threshold_mg)
+int device_config_save_id(uint8_t id)
 {
-    char line[32];
+    char line[16];
+    snprintf(line, sizeof(line), "id %02X\n", id);
 
-    snprintf(line, sizeof(line), "accel_threshold %u\n", threshold_mg);
-    return save_directive("accel_threshold", line);
+    struct cfg_directive d = {.key = "id", .line = line};
+    return save_directives(&d, 1);
 }
 
 int device_config_save_volume(uint8_t volume)
 {
     char line[16];
-
     snprintf(line, sizeof(line), "volume %u\n", volume);
-    return save_directive("volume", line);
+
+    struct cfg_directive d = {.key = "volume", .line = line};
+    return save_directives(&d, 1);
+}
+
+int device_config_save_delay(uint16_t delay_min_ms, uint16_t delay_max_ms)
+{
+    char min_line[24];
+    char max_line[24];
+    snprintf(min_line, sizeof(min_line), "delay_min %u\n", delay_min_ms);
+    snprintf(max_line, sizeof(max_line), "delay_max %u\n", delay_max_ms);
+
+    struct cfg_directive dirs[] = {
+        {.key = "delay_min", .line = min_line},
+        {.key = "delay_max", .line = max_line},
+    };
+    return save_directives(dirs, ARRAY_SIZE(dirs));
+}
+
+int device_config_save_accel_threshold(uint16_t threshold_mg)
+{
+    char line[32];
+    snprintf(line, sizeof(line), "accel_threshold %u\n", threshold_mg);
+
+    struct cfg_directive d = {.key = "accel_threshold", .line = line};
+    return save_directives(&d, 1);
+}
+
+int device_config_save_relay_ttl(uint8_t relay_ttl)
+{
+    char line[16];
+    snprintf(line, sizeof(line), "relay_ttl %u\n", relay_ttl);
+
+    struct cfg_directive d = {.key = "relay_ttl", .line = line};
+    return save_directives(&d, 1);
 }
