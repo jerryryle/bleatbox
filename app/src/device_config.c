@@ -174,8 +174,10 @@ static int write_all(struct fs_file_t *file, const char *data, size_t len)
     return 0;
 }
 
-/* Copy @p in to @p out line by line, dropping any existing directive whose
- * key matches the first token of @p replacement, then append @p replacement. */
+/* Copy @p in to @p out line by line.  The @p key directive is replaced in
+ * place by @p replacement, preserving its position next to any associated
+ * comment; duplicate occurrences are dropped.  If the key isn't present, the
+ * replacement is appended at the end. */
 static int rewrite_directive(struct fs_file_t *in, struct fs_file_t *out,
                              const char *key, const char *replacement)
 {
@@ -183,11 +185,21 @@ static int rewrite_directive(struct fs_file_t *in, struct fs_file_t *out,
     int pos = 0;
     ssize_t nread;
     int ret;
+    bool replaced = false;
 
     while ((nread = fs_read(in, buf + pos, 1)) == 1) {
         if (buf[pos] == '\n') {
             buf[pos + 1] = '\0';
-            if (!line_has_key(buf, key)) {
+            if (line_has_key(buf, key)) {
+                if (!replaced) {
+                    ret = write_all(out, replacement, strlen(replacement));
+                    if (ret) {
+                        return ret;
+                    }
+                    replaced = true;
+                }
+                /* else: a duplicate of an already-replaced key — drop it. */
+            } else {
                 ret = write_all(out, buf, pos + 1);
                 if (ret) {
                     return ret;
@@ -207,17 +219,32 @@ static int rewrite_directive(struct fs_file_t *in, struct fs_file_t *out,
         return (int)nread;
     }
 
-    /* A final line with no trailing newline: keep it, but terminate it so
-     * the appended directive lands on its own line. */
-    if (pos > 0 && !line_has_key(buf, key)) {
-        buf[pos] = '\n';
-        ret = write_all(out, buf, pos + 1);
-        if (ret) {
-            return ret;
+    /* A final line with no trailing newline. */
+    if (pos > 0) {
+        buf[pos] = '\0';
+        if (line_has_key(buf, key)) {
+            if (!replaced) {
+                ret = write_all(out, replacement, strlen(replacement));
+                if (ret) {
+                    return ret;
+                }
+                replaced = true;
+            }
+        } else {
+            /* Terminate it so an appended directive lands on its own line. */
+            buf[pos] = '\n';
+            ret = write_all(out, buf, pos + 1);
+            if (ret) {
+                return ret;
+            }
         }
     }
 
-    return write_all(out, replacement, strlen(replacement));
+    if (!replaced) {
+        return write_all(out, replacement, strlen(replacement));
+    }
+
+    return 0;
 }
 
 /* Do the rewrite, assuming the caller already holds the filesystem lock. */
