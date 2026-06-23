@@ -20,6 +20,14 @@ static struct fs_mount_t g_mount_point = {
 };
 static bool g_mounted;
 
+/* FatFs is built without its own reentrancy (FF_FS_REENTRANT=0), and the
+ * Zephyr FS layer does not lock fs_read/fs_write.  Two threads touching the
+ * volume at once would race FatFs's shared per-volume state, so every caller
+ * that holds a file open across multiple operations must serialize through
+ * this mutex (audio playback for a whole sound, the config rewrite for its
+ * whole sequence). */
+static K_MUTEX_DEFINE(g_fs_mutex);
+
 void sdcard_init(void)
 {
     g_mounted = false;
@@ -53,4 +61,14 @@ int sdcard_mount(void)
 bool sdcard_is_mounted(void)
 {
     return g_mounted;
+}
+
+void sdcard_lock(void)
+{
+    k_mutex_lock(&g_fs_mutex, K_FOREVER);
+}
+
+void sdcard_unlock(void)
+{
+    k_mutex_unlock(&g_fs_mutex);
 }

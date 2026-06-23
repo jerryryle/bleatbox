@@ -27,4 +27,19 @@ int sdcard_mount(void);
  */
 bool sdcard_is_mounted(void);
 
+/**
+ * Acquire exclusive access to the filesystem.
+ *
+ * FatFs is not thread-safe in this build, so any caller that performs a
+ * sequence of filesystem operations — especially one that holds a file open
+ * across multiple reads/writes — must hold this lock for the whole sequence.
+ * Blocks until the lock is available.  Must be balanced with sdcard_unlock().
+ */
+void sdcard_lock(void);
+
+/**
+ * Release the filesystem lock acquired with sdcard_lock().
+ */
+void sdcard_unlock(void);
+
 #endif /* SDCARD_H_ */

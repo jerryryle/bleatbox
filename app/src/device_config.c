@@ -220,14 +220,9 @@ static int rewrite_directive(struct fs_file_t *in, struct fs_file_t *out,
     return write_all(out, replacement, strlen(replacement));
 }
 
-/* Rewrite /SD:/bleatbox.cfg, replacing the @p key directive with @p replacement
- * (a full "key value\n" line) and leaving every other line untouched. */
-static int save_directive(const char *key, const char *replacement)
+/* Do the rewrite, assuming the caller already holds the filesystem lock. */
+static int rewrite_config_file(const char *key, const char *replacement)
 {
-    if (!sdcard_is_mounted()) {
-        return -ENODEV;
-    }
-
     struct fs_file_t in;
     struct fs_file_t out;
     fs_file_t_init(&in);
@@ -274,6 +269,24 @@ static int save_directive(const char *key, const char *replacement)
     }
 
     return 0;
+}
+
+/* Rewrite /SD:/bleatbox.cfg, replacing the @p key directive with @p replacement
+ * (a full "key value\n" line) and leaving every other line untouched.
+ *
+ * Holds the filesystem lock across the whole rewrite so it cannot race audio
+ * playback reading the SD card on another thread. */
+static int save_directive(const char *key, const char *replacement)
+{
+    if (!sdcard_is_mounted()) {
+        return -ENODEV;
+    }
+
+    sdcard_lock();
+    int ret = rewrite_config_file(key, replacement);
+    sdcard_unlock();
+
+    return ret;
 }
 
 int device_config_save_accel_threshold(uint16_t threshold_mg)
